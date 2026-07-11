@@ -8,7 +8,8 @@ Nenhum projeto Supabase remoto foi criado ou alterado; migration e código são 
 
 **Correções (mesmo dia):**
 - [Correção 12B — Ambiguidade de customer_id no relatório de clientes](#correção-12b--ambiguidade-de-customer_id-no-relatório-de-clientes) — corrige `column reference "customer_id" is ambiguous` em `report_customers` (`getCustomersReport`).
-- [Correção 12C — Otimização do snapshot analítico](#correção-12c--otimização-do-snapshot-analítico) — corrige `canceling statement due to statement timeout` em `analytics_dashboard_snapshot` (`getSnapshot`).
+- [Correção 12C — Otimização do snapshot analítico](#correção-12c--otimização-do-snapshot-analítico) — corrige `canceling statement due to statement timeout` em `analytics_dashboard_snapshot` (`getSnapshot`), eliminando varreduras repetidas de `orders`/`payments`.
+- [Correção 12D — Timeout causado por RLS no snapshot autenticado](#correção-12d--timeout-causado-por-rls-no-snapshot-autenticado) — o timeout da 12C persistia especificamente para usuários autenticados (não para `postgres` no SQL Editor); causa era o custo de RLS linha a linha, não mais I/O repetido.
 
 ## Por que não replicar o `AnalyticsService` local em Supabase
 
@@ -232,6 +233,94 @@ Todos criados com `create index if not exists`, sem `concurrently` — mesmo pad
 | `npm run lint` | ✅ sem erros/avisos |
 | `npm run type-check` | ✅ sem erros |
 | `npm run test` | ✅ 76/76 (73 anteriores + 3 novos) |
+| `npm run build` | ✅ build concluído, 13 rotas |
+
+### Commit
+
+Não commitado — aguardando aprovação, conforme solicitado.
+
+---
+
+## Correção 12D — Timeout causado por RLS no snapshot autenticado
+
+### O erro (persistindo após a Correção 12C)
+
+```
+Error: canceling statement due to statement timeout
+```
+
+Diagnóstico confirmado pelo usuário: `public.analytics_dashboard_snapshot(uuid,text)` roda rápido no SQL Editor como `postgres`, mas a **mesma RPC** estoura o timeout quando chamada pelo aplicativo com um usuário autenticado comum.
+
+### Causa raiz
+
+`postgres` (ou qualquer role usada no SQL Editor) tipicamente não é dono das tabelas/sujeito às políticas RLS da mesma forma que o papel `authenticated` do PostgREST — então a diferença de comportamento entre "SQL Editor" e "app autenticado" é a própria RLS. A função da Correção 12C é `SECURITY INVOKER` (padrão, sem `security definer` — decisão deliberada da Etapa 12 original, documentada na seção "Decisão de design" no início deste arquivo). Isso significa que **cada linha** lida dentro das CTEs materializadas (`period_orders`, `period_payments`, `products`, `customers`) passa pela avaliação da política RLS da respectiva tabela — que por sua vez chama `is_company_member(company_id)`, uma subconsulta contra `company_users`. A Correção 12C já eliminou as varreduras redundantes (I/O), mas o **custo de avaliar RLS linha a linha**, multiplicado pelas CTEs e junções da função, ainda é caro o suficiente para estourar o timeout sob um usuário autenticado real — um problema diferente do resolvido na 12C, e só visível nesse modo de execução.
+
+### Correção aplicada
+
+Migration aditiva `supabase/migrations/202607114300_fix_analytics_snapshot_rls.sql`, com `create or replace function public.analytics_dashboard_snapshot(p_company uuid, p_period text)`:
+
+- **Mesma assinatura, mesmo retorno jsonb, mesma lógica otimizada da Correção 12C** (CTEs `period_orders`/`period_payments` `materialized`, mesmos filtros, mesmas agregações) — nenhuma regra de negócio mudou.
+- **`SECURITY DEFINER`** — a função passa a rodar com o privilégio do seu dono (o papel que aplica as migrations, não sujeito às políticas RLS de aplicação), eliminando a avaliação de RLS linha a linha nas tabelas internas.
+- **`SET search_path = public`** mantido explicitamente na própria declaração da função (blindagem padrão para funções `security definer`, evita sequestro de search_path).
+- **Proprietário controlado do banco**: a função é criada pela migration (executada pelo papel de administração do Supabase/CLI), nunca por um usuário de aplicação — mesmo padrão de propriedade de todas as outras funções `security definer` já existentes no projeto desde a Etapa 8.
+- **Nenhuma entrada SQL dinâmica**: a função não usa `execute format(...)` nem concatenação de SQL — todos os filtros são parâmetros tipados (`p_company uuid`, `p_period text`) usados em comparações diretas, sem risco de injeção.
+
+### Mecanismo de autorização explícita
+
+Como a função agora ignora a RLS internamente, ela **não pode mais confiar apenas no `p_company` recebido como parâmetro** — a autorização passa a ser verificada explicitamente, antes de qualquer leitura:
+
+```sql
+if auth.uid() is null then
+  raise exception 'Acesso negado à empresa solicitada' using errcode = '42501';
+end if;
+
+if not exists (
+  select 1 from company_users
+  where company_id = p_company and user_id = auth.uid() and status = 'active'
+) then
+  raise exception 'Acesso negado à empresa solicitada' using errcode = '42501';
+end if;
+```
+
+- Rejeita chamadas sem sessão autenticada (`auth.uid() is null`).
+- Exige vínculo **ativo** (`status = 'active'`) do usuário autenticado especificamente com a empresa `p_company` recebida, verificado contra `company_users` — a mesma tabela e a mesma condição (`user_id = auth.uid()`, `status = 'active'`) que as políticas RLS já usavam via `is_company_member`, só que avaliada **uma única vez** no início da função, não linha a linha.
+- Em qualquer uma das duas falhas, lança exceção com `errcode = '42501'` (código Postgres padrão de `insufficient_privilege`), a mesma classe de erro que a RLS teria produzido.
+
+### Confirmação de isolamento entre empresas
+
+Como a função ignora RLS internamente (`security definer`), o único mecanismo que impede um usuário de ler dados de outra empresa é essa checagem explícita — não é mais defesa em profundidade, é a fronteira de segurança real. Ela cobre o caso relevante: um usuário autenticado só passa pela checagem se tiver uma linha `active` em `company_users` para exatamente o `p_company` que ele mesmo informou; um usuário da empresa A que tente chamar a RPC com o `p_company` da empresa B não tem esse vínculo e recebe `42501` antes de qualquer tabela de dados ser tocada. Isso é coerente com o restante do sistema: `p_company` sempre chega do lado do app a partir de `getSelectedCompanyId()` (Etapa 8, validado pelo middleware contra `company_users`), mas a RPC agora valida de novo por conta própria, sem depender dessa garantia externa.
+
+### Permissões aplicadas
+
+```sql
+revoke all on function public.analytics_dashboard_snapshot(uuid,text) from public;
+revoke all on function public.analytics_dashboard_snapshot(uuid,text) from anon;
+grant execute on function public.analytics_dashboard_snapshot(uuid,text) to authenticated;
+```
+
+Execução pública e anônima revogada explicitamente; só o papel `authenticated` do PostgREST pode chamar a função — coerente com a checagem interna, que já rejeitaria uma chamada anônima (`auth.uid() is null`), mas revogar a permissão de antemão evita até a tentativa.
+
+### Escopo da correção
+
+Apenas `analytics_dashboard_snapshot` foi recriada. `report_products`, `report_customers`, `report_stock` e `analytics_period_bounds` continuam `SECURITY INVOKER`, sem alteração — o diagnóstico e a reclamação de timeout foram especificamente sobre o snapshot do dashboard, a função mais complexa (mais CTEs, mais joins) e a mais exercitada (chamada em toda troca de período). Se o mesmo sintoma aparecer nas funções de relatório sob volume real, a mesma técnica (security definer + checagem explícita de `company_users`) pode ser replicada nelas em uma migration futura — não antecipado aqui para não alterar funções que não têm o problema confirmado.
+
+### Arquivos
+
+- **Criado**: `supabase/migrations/202607114300_fix_analytics_snapshot_rls.sql`.
+- **Alterados**: `tests/supabase-foundation.test.mjs`, `ETAPA-12-SUPABASE-DASHBOARD-RELATORIOS.md`. **Nenhum arquivo `.ts`/`.tsx` de produção mudou** — assinatura e formato de retorno da RPC são idênticos; `lib/repositories/supabase.ts` chama a função exatamente como antes.
+- As migrations `202607114000`, `202607114100` e `202607114200` **não foram tocadas** — confirmado por `git status`.
+
+### Testes adicionados
+
+- `tests/supabase-foundation.test.mjs`: confirma que as três migrations anteriores da camada analítica permanecem intactas; confirma que a correção usa `security definer` com `search_path = public` fixo, mantém as CTEs `materialized` da Correção 12C; confirma a presença da checagem `auth.uid() is null`, da consulta a `company_users` comparando `company_id = p_company`/`user_id = auth.uid()`/`status = 'active'`, e das duas ocorrências de `errcode = '42501'`; confirma `revoke ... from public`, `revoke ... from anon` e `grant ... to authenticated`; confirma ausência de SQL dinâmico (`execute format`/`execute '...'`); confirma que nenhuma outra função/RPC foi recriada no arquivo.
+
+### Validação executada (Correção 12D)
+
+| Comando | Resultado |
+|---|---|
+| `npm run lint` | ✅ sem erros/avisos |
+| `npm run type-check` | ✅ sem erros |
+| `npm run test` | ✅ 77/77 (76 anteriores + 1 novo) |
 | `npm run build` | ✅ build concluído, 13 rotas |
 
 ### Commit
