@@ -30,10 +30,10 @@ export interface RewardsRepository {
   updateCoupon(id: string, input: CouponInput): Promise<RewardsState>;
   deleteCoupon(id: string): Promise<RewardsState>;
   registerPayment(orderId: string, method: PaymentMethod, status: PaymentStatus, reference?: string, notes?: string): Promise<RewardsState>;
+  refundPayment(paymentId: string, amount: number, reason: string, fullRefund?: boolean): Promise<RewardsState>;
   updateProgram(mode: LoyaltyMode, pointsPerReal: number, rewardThreshold: number, rewardDescription: string): Promise<RewardsState>;
   syncLoyalty?(): Promise<RewardsState>;
   registerPaymentSplit?(orderId: string, legs: PaymentLegInput[]): Promise<RewardsState>;
-  refundPayment?(paymentId: string, reason?: string): Promise<RewardsState>;
   applyCouponToOrder?(orderId: string, code: string): Promise<RewardsState>;
   redeemReward?(customerId: string, reason?: string): Promise<RewardsState>;
 }

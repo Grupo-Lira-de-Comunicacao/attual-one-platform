@@ -6,6 +6,8 @@ Pagamentos, cupons e fidelidade agora têm repositório Supabase real, com o pai
 
 Nenhum projeto Supabase remoto foi criado ou alterado; migrations e seed são SQL versionado.
 
+**Adendo (mesmo dia):** a seção [Correção 11B — Estorno total e parcial de pagamentos](#correção-11b--estorno-total-e-parcial-de-pagamentos) no fim deste documento cobre uma entrega seguinte, que deu UI real de estorno (total ou parcial) ao pagamento — ampliando o que `refundPayment` fazia aqui só a nível de repositório.
+
 ## Duas exceções deliberadas a "nunca redefinir RPC/tipo existente"
 
 Diferente das Etapas 9 e 10 (só migrations aditivas), esta etapa tem **duas alterações pontuais e documentadas**, ambas exigidas por requisitos explícitos e ambas com risco zero de regressão:
@@ -71,7 +73,9 @@ Seguindo o mesmo critério de honestidade de escopo da Etapa 9 (`product_options
 
 **Com UI nesta etapa:** listar pagamentos reais; registrar/atualizar pagamento simples (modal existente, agora gravando de verdade); criar, editar, desativar (editar status) e excluir cupom, com o novo campo de limite por cliente; saldo e ranking de fidelidade reais; histórico de fidelidade (nova seção, só quando há dados); tudo reflete após recarregar (efeito do padrão `load()` já usado desde a Etapa 9).
 
-**Só no repositório/RPC, sem tela nova (capacidade real, testável, sem consumidor de UI ainda):** `registerPaymentSplit` (divisão entre formas), `refundPayment` (estorno de uma parcela), `applyCouponToOrder` (aplicar cupom a um pedido pelo painel — hoje só a loja pública aplica cupom, e localmente), `redeemReward` (resgatar recompensa). Nenhum desses tinha uma tela correspondente antes desta etapa, e o requisito 4 não pede uma nova.
+**Só no repositório/RPC, sem tela nova (capacidade real, testável, sem consumidor de UI ainda):** `registerPaymentSplit` (divisão entre formas), `applyCouponToOrder` (aplicar cupom a um pedido pelo painel — hoje só a loja pública aplica cupom, e localmente), `redeemReward` (resgatar recompensa). Nenhum desses tinha uma tela correspondente antes desta etapa, e o requisito 4 não pede uma nova.
+
+> **Atualização (adendo):** `refundPayment` ganhou UI real depois desta etapa original — ver [Correção 11B — Estorno total e parcial de pagamentos](#correção-11b--estorno-total-e-parcial-de-pagamentos). Deixou de estar nesta lista de "sem tela".
 
 ## Como executar o seed (opcional)
 
@@ -103,4 +107,78 @@ Pré-requisitos: empresa `hamburgueria-07` já criada; `hamburgueria-07-catalog.
 | `npm run lint` | ✅ sem erros/avisos |
 | `npm run type-check` | ✅ sem erros |
 | `npm run test` | ✅ 57/57 (54 anteriores + 3 novos) |
+| `npm run build` | ✅ build concluído, 13 rotas |
+
+---
+
+## Correção 11B — Estorno total e parcial de pagamentos
+
+Entrega seguinte no mesmo dia, a pedido explícito: dar UI real de estorno ao módulo `/pagamentos`, algo que a Etapa 11 original só tinha deixado como capacidade de repositório sem tela (`refundPayment?`, opcional, sem consumidor).
+
+### Botão Estornar no painel e modal de confirmação
+
+- Em cada pagamento com `status="paid"`, a tabela de Pagamentos agora mostra um botão **Estornar**.
+- Clicar abre um modal de confirmação: valor recebido, já estornado (se houver) e disponível; um toggle **Estorno total** (marcado por padrão); campo de valor parcial que só aparece quando o toggle é desmarcado, travado no máximo disponível; motivo obrigatório; botão de confirmação desabilitado enquanto o formulário for inválido **ou enquanto o estorno estiver em andamento** (ver exceção 3, abaixo).
+- Uma nova seção **"Histórico de estornos"** aparece na aba Pagamentos quando há dados (mesmo padrão visual do histórico de fidelidade já existente).
+- `refundPayment` deixou de ser opcional no contrato do repositório — agora é implementado nos dois modos (local e Supabase), porque passou a ter um consumidor de UI real.
+
+### Nova tabela `payment_refunds`
+
+Histórico auditável de estornos, um registro por ação — mesmo padrão de `stock_movements`: `id`, `company_id`, `payment_id`, `order_id`, `amount_cents`, `reason` (obrigatório, `check(length(trim(reason))>0)`), `idempotency_key`, `created_at`, `created_by`. RLS habilitada (`payment_refunds_member_read`, `payment_refunds_operations_write`) e trigger de auditoria (`capture_audit`), mesmos padrões já usados em toda tabela operacional desde a Etapa 8.
+
+### Alteração da RPC `refund_payment_leg`
+
+Diferente de `complete_order` (Etapa 11 original, `create or replace` com a mesma assinatura), `refund_payment_leg` **mudou de assinatura**: de `(uuid, text)` — só estorno total, sem valor, sem chave de idempotência própria — para `(uuid, integer, text, text)` — `p_payment, p_amount_cents, p_reason, p_key` —, aceitando valor parcial e uma `idempotency_key` dedicada. Como Postgres trataria isso como uma sobrecarga (duas funções coexistindo) em vez de substituição, a migration faz `drop function if exists public.refund_payment_leg(uuid, text)` antes de recriar, evitando deixar uma versão-fantasma sem uso. Nenhum outro chamador dependia da assinatura antiga (ela nunca teve consumidor de UI). A RPC recusa estornar mais do que `amount_cents - refunded_cents` (o disponível), recusa pagamentos que não estejam `status='paid'`, e exige motivo não vazio.
+
+### Correção da RPC `register_payment_leg`
+
+Como consequência direta de suportar estorno parcial, `register_payment_leg` (mesma assinatura, `create or replace` — nenhum chamador precisou mudar) também precisou de correção: sua fórmula de agregação do pedido somava pagamentos por `status='paid'` sem descontar o que já havia sido estornado. Sem a correção, registrar um novo pagamento depois de um estorno parcial recalcularia `orders.payment_status` como se o valor estornado ainda estivesse "pago". A fórmula passou a ser líquida: `sum(amount_cents - refunded_cents)`.
+
+### Atualização automática do pedido
+
+Ambas as RPCs recalculam, na mesma transação da função, `orders.payment_status` a partir do valor líquido pago (`amount_cents - refunded_cents` somado entre todos os pagamentos do pedido): `paid` se cobre o total, `partial` se cobre parte, `refunded` se nada mais restar pago mas houve estorno, `pending` caso contrário. Como o painel recarrega `state`/`commerce` via `act()` logo após a chamada (mesmo padrão desde a Etapa 9), o valor recebido/pendente exibido e o status do pedido já saem atualizados sem navegação.
+
+### Idempotência e prevenção de duplo clique
+
+- **No banco**: `payment_refunds` tem `unique(company_id, idempotency_key)`; a RPC verifica essa chave antes de qualquer escrita e retorna o pagamento inalterado se a chave já foi usada — protege contra reenvio de rede da mesma chamada.
+- **Na UI**: cada clique em "Confirmar estorno" gera uma `crypto.randomUUID()` nova, então duas chamadas distintas (ex.: duplo clique) teriam chaves diferentes e **não** seriam deduplicadas pelo banco. Por isso o `RefundModal` ganhou um estado `submitting` que desabilita os dois botões do modal e troca o texto para "Estornando..." assim que a primeira chamada começa — impedindo fisicamente o segundo clique de sair do navegador. Ver "Achado da própria revisão", abaixo.
+
+### Histórico de estornos
+
+Nova seção **"Histórico de estornos"** na aba Pagamentos do painel, visível quando `state.paymentRefunds` vem preenchido (modo Supabase — `loadRewards` passou a buscar os 20 estornos mais recentes da empresa, com número do pedido, cliente, valor e motivo). Segue o mesmo padrão visual do "Histórico de fidelidade" já existente desde a Etapa 11 original. Além disso, cada linha da tabela de pagamentos mostra o valor já estornado (`Estornado: R$ X`) quando `refundedAmount > 0`, e o card "Recebido" do resumo da aba passou a descontar valores estornados do total exibido.
+
+### Arquivos criados
+
+- `supabase/migrations/202607113000_attual_one_payment_refund.sql` — coluna `payments.refunded_cents`, tabela `payment_refunds` (histórico auditável, RLS, trigger de auditoria — mesmo padrão de `stock_movements`), `refund_payment_leg` recriada, `register_payment_leg` corrigida.
+
+### Arquivos alterados
+
+- `lib/rewards-service.ts` — novo método `refundPayment(paymentId, amount, reason)`. Único arquivo de lógica local tocado nesta etapa/adendo inteiros — legítimo porque é o próprio módulo de recompensas, não pedidos/catálogo. Local **só suporta estorno total**: uma tentativa de valor menor que o total lança `"O modo local só suporta estorno total deste pagamento."` — limitação honesta, documentada na própria mensagem de erro, em vez de fingir suportar parcial sem de fato controlar o saldo restante.
+- `lib/rewards-types.ts` — `Payment` ganhou `refundedAmount?`; novo tipo `PaymentRefund`; `RewardsState` ganhou `paymentRefunds?` (opcional, só Supabase preenche).
+- `lib/repositories/contracts.ts` — `refundPayment` passou de opcional (`refundPayment?(paymentId, reason?)`) para obrigatório, com assinatura `refundPayment(paymentId, amount, reason, fullRefund?)`.
+- `lib/repositories/local.ts` — expõe `refundPayment` delegando para `RewardsService`.
+- `lib/repositories/supabase.ts` — `loadRewards` passou a buscar `payment_refunds` e a incluir `refunded_cents` por pagamento; `refundPayment` chama a `refund_payment_leg` recriada, com `p_amount_cents: null` quando `fullRefund` é verdadeiro.
+- `components/rewards-manager.tsx` — botão Estornar, `RefundModal`, seção de histórico de estornos, resumo "Recebido" da aba Pagamentos corrigido para descontar valores já estornados.
+- `tests/supabase-foundation.test.mjs` — 2 novos testes (estorno local com recusa de parcial e de duplicado; estrutura da nova migration).
+
+### Achado da própria revisão: guard contra duplo-clique
+
+Ao reler o código antes de reportar como concluído, percebi que o botão "Confirmar estorno" não se desabilitava durante o envio — um duplo-clique real dispararia duas chamadas com `crypto.randomUUID()` diferentes cada vez (chave de idempotência nova por chamada), driblando a proteção de idempotência no banco. Adicionei um estado `submitting` no modal que desabilita os dois botões e troca o texto para "Estornando..." enquanto a chamada está em curso. Corrigido antes do primeiro report, mas registrado aqui porque é exatamente o tipo de lacuna que "garantir idempotência" deveria cobrir.
+
+### Limitação do teste no navegador
+
+**Não foi possível testar clicando de verdade no navegador.** Durante a verificação, veio à tona que `.env.local` já está configurado com um projeto Supabase real (`NEXT_PUBLIC_DATA_MODE=supabase`, URL real) — configurado em algum momento fora das minhas ações, já que esse arquivo nunca foi tocado em nenhuma etapa. Não há credenciais de login para esse projeto disponíveis para mim, e havia um `next dev` de outra sessão já rodando na porta 3000; o Next.js recusa uma segunda instância no mesmo diretório de projeto, e a decisão foi não encerrar o servidor existente. A validação ficou restrita a:
+
+- **Automatizada**: `npm run test` (59/59, incluindo os 2 novos testes do estorno), `npm run type-check`, `npm run lint`, `npm run build`.
+- **Revisão de código**: releitura completa do componente e da migration antes do report, que encontrou e corrigiu o problema de duplo-clique acima.
+
+Isso é uma lacuna real em relação ao processo normal ("start the dev server and use the feature in a browser"), registrada aqui em vez de omitida.
+
+### Validação executada (adendo)
+
+| Comando | Resultado |
+|---|---|
+| `npm run lint` | ✅ sem erros/avisos |
+| `npm run type-check` | ✅ sem erros |
+| `npm run test` | ✅ 59/59 (57 anteriores + 2 novos) |
 | `npm run build` | ✅ build concluído, 13 rotas |
