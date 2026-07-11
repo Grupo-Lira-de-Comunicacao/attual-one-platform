@@ -325,4 +325,78 @@ Apenas `analytics_dashboard_snapshot` foi recriada. `report_products`, `report_c
 
 ### Commit
 
+Commit `e32ac92` — `fix: usar security definer com autorização explícita no snapshot para evitar timeout de RLS`.
+
+## Correção 12E — Timeout residual causado pela camada React/Next (deduplicação, cancelamento e tratamento de erro)
+
+### O erro (persistindo após a Correção 12D)
+
+```
+Error: canceling statement due to statement timeout
+    at Object.getSnapshot (lib/repositories/supabase.ts)
+```
+
+Diagnóstico confirmado pelo usuário antes desta correção: `public.analytics_dashboard_snapshot(uuid,text)` funciona no SQL Editor como `postgres`; funciona também simulando `set local role authenticated` com `request.jwt.claim.sub` de um usuário real; está `security definer`, com `owner postgres`, `search_path` e permissões corretos (exatamente o que a Correção 12D implementou). Mesmo assim, o erro continuava aparecendo no navegador — inclusive ao navegar por `/relatorios` e `/estoque`, páginas que não chamam `getSnapshot`. Como o próprio banco já foi descartado como causa (a RPC funciona isolada, nos dois papéis), o problema não é mais SQL — é a camada React/Next/Supabase que está chamando a RPC de um jeito que amplifica ou prolonga o problema. Nenhuma migration foi criada ou alterada nesta correção.
+
+### Causa raiz
+
+Duas falhas na camada de chamada, não na consulta em si:
+
+1. **Sem deduplicação de chamadas concorrentes**: `next.config.ts` tem `reactStrictMode: true`, e em desenvolvimento o React 19 monta cada componente duas vezes de propósito (mount → cleanup → mount) para expor efeitos colaterais mal escritos. `RealDashboard` e `ReportsManager` chamam `getSnapshot` dentro de `useEffect`, então **cada carregamento de página disparava a RPC duas vezes em paralelo** — o dobro do custo de execução no Postgres para o mesmo dado, sem nenhum motivo funcional.
+2. **Sem `.catch` nas promises e sem cancelamento real**: em `real-dashboard.tsx`, a flag `cancelled` impedia `setState` após desmontar, mas a cadeia `Promise.all([...]).then(...)` não tinha `.catch` — um `reject` (como o timeout) virava um `unhandledRejection` no console, sem nenhuma UI de erro. Em `reports-manager.tsx` a situação era pior: os 4 `useEffect` (`getSnapshot`, `getProductsReport`, `getCustomersReport`, `getStockReport`) não tinham flag `cancelled` nenhuma **nem** `.catch`. Como nenhuma das duas telas cancela a chamada de fato (o `fetch` HTTP para o PostgREST continua em andamento no navegador mesmo depois do componente desmontar ou o usuário navegar para outra rota), quando a RPC finalmente estourava o timeout do lado do Postgres — segundos depois, já com o usuário em `/relatorios` ou `/estoque` — o `unhandledRejection` aparecia no console associado a `Object.getSnapshot`, **independente da página em que o usuário estava naquele momento**, porque o console do navegador não é escopado por rota. Isso explica por que o erro "aparecia" em páginas que nunca chamam `getSnapshot`.
+
+Combinado, o efeito prático era: 2 execuções concorrentes da mesma consulta a cada carregamento do Dashboard (ou a cada troca de período/busca nos Relatórios, sem deduplicação nenhuma entre elas), sem tratamento de erro, com o estouro de timeout de uma chamada antiga surgindo minutos depois, associado à página errada.
+
+### Correção aplicada
+
+**Novo módulo puro `lib/repositories/analytics-cache.ts`**, testável isoladamente:
+
+```ts
+export function dedupeInFlight<T>(cache:Map<string,Promise<T>>,key:string,run:()=>Promise<T>):Promise<T>{
+  const cached=cache.get(key);if(cached)return cached;
+  const promise=run().finally(()=>{if(cache.get(key)===promise)cache.delete(key)});
+  cache.set(key,promise);return promise
+}
+export function logAnalyticsCall(event:"start"|"success"|"error",details:{...}):void{
+  if(process.env.NODE_ENV==="production")return;
+  console.debug("[analytics]",event,{...details,count:...,at:new Date().toISOString()})
+}
+```
+
+**`lib/repositories/supabase.ts`** — as 4 funções de `analytics` (`getSnapshot`, `getProductsReport`, `getCustomersReport`, `getStockReport`) passam por `dedupeInFlight`, com cache `Map` em escopo de módulo, chaveado por `tipo:companyId:período(:busca:página:tamanho quando aplicável)`. Chamadas concorrentes com a mesma chave (Strict Mode, ou Dashboard e Relatórios pedindo o mesmo período ao mesmo tempo) agora **reaproveitam a mesma Promise** em vez de disparar uma nova RPC cada uma; a chave sai do cache assim que a chamada resolve ou falha (`finally`), então a próxima requisição real dispara uma nova execução — não é um cache de dados, só uma deduplicação de chamadas em andamento. Cada chamada também passa por `logAnalyticsCall`, que registra em `console.debug` (somente fora de `production`) o início, sucesso ou erro com `companyId`, período, contador de chamadas por chave e duração em ms — para diagnóstico futuro sem instrumentar o banco.
+
+**`components/real-dashboard.tsx`** — a cadeia `Promise.all([...]).then(...)` ganhou `.catch(e=>{if(!cancelled)inform("error",...)})`, reaproveitando o mesmo padrão de toast (`notice`/`inform`) já usado em `catalog-manager.tsx`, `commerce-manager.tsx` e `rewards-manager.tsx`. A flag `cancelled` já existente agora também protege o `catch`, então nenhum `setState` acontece após desmontar.
+
+**`components/reports-manager.tsx`** — os 4 `useEffect` (`snapshot`, `produtos`, `clientes`, `estoque`) ganharam flag `cancelled` (antes não tinham nenhuma) e `.catch` com o mesmo padrão de toast, cada um com uma mensagem específica. Um erro em qualquer um dos 4 blocos de dados não derruba a página — os outros três continuam funcionando normalmente, e as tabelas já tratavam `null` com `??[]`.
+
+**Confirmação do item 7 do pedido** (chamada pelo app-shell/layout global): `app/layout.tsx` e `components/app-shell.tsx` não importam `analytics` nem chamam `getSnapshot` — a única leitura de analytics acontece dentro de `RealDashboard` (rota `/`) e `ReportsManager` (rota `/relatorios`), cada uma nos seus próprios efeitos, condicionadas a `companyId` já resolvido no servidor (`getSelectedCompanyId()`, lido de cookie antes da hidratação, então nunca fica "indefinido" depois de montado). `CatalogManager`, usado em `/estoque`, não referencia `analytics` em nenhum ponto — o erro reportado nessa rota era sempre o `unhandledRejection` tardio de uma chamada anterior do Dashboard, não uma chamada nova feita pelo Estoque. Não havia chamada para remover do app-shell/layout porque nunca existiu ali.
+
+### Por que isso resolve o sintoma sem alterar o banco
+
+A Correção 12C eliminou I/O redundante; a 12D eliminou o custo de RLS linha a linha. Depois das duas, a RPC isolada já roda rápido nos dois papéis (confirmado pelo usuário). O que restava era o cliente disparando a mesma consulta cara em dobro (Strict Mode) toda vez que a tela carregava, sem controle de concorrência nem tratamento de falha — pressão desnecessária sobre o mesmo pool de conexões que as etapas anteriores já haviam otimizado. Deduplicar as chamadas corta esse dobro para uma execução real; capturar o erro evita que uma falha pontual (rede lenta, deploy, pico de uso) vaze como `unhandledRejection` anônimo em qualquer página aberta.
+
+### Testes adicionados
+
+`tests/analytics-cache.test.mjs` (novo arquivo, módulo puro, sem depender de renderização React/JSX): confirma que chamadas concorrentes com a mesma chave reutilizam a mesma Promise e a função `run` executa uma única vez; confirma que, após resolver, a chave sai do cache e uma nova chamada dispara nova execução; confirma que chaves diferentes (empresa ou período diferentes) não compartilham deduplicação; confirma que uma rejeição também remove a chave do cache (não fica uma Promise rejeitada presa) e uma chamada seguinte tenta de novo; confirma que chamadas concorrentes que falham propagam o mesmo erro para todos os que aguardam, sem lançar exceção não tratada; confirma que `logAnalyticsCall` nunca lança erro.
+
+**Limitação de cobertura, declarada explicitamente**: os cenários pedidos sobre comportamento de componente React (uma chamada no primeiro carregamento, nenhuma chamada em `/estoque` e `/pedidos`, troca de período gerando só uma nova chamada, logout não disparando snapshot) **não têm teste automatizado nesta correção** — o `test` runner do projeto (`node --test --experimental-strip-types`) só remove tipos TypeScript, não transforma JSX, e o projeto não tem `jsdom`/`@testing-library/react` instalado (confirmado em `package.json`). Testar esses cenários exigiria adicionar essa infraestrutura, o que não foi pedido nem está no escopo desta correção. A cobertura real desses comportamentos vem da dedução direta do código (efeitos condicionados a `companyId`/período, ausência confirmada de `analytics` em `app-shell.tsx`/`layout.tsx`/`catalog-manager.tsx`) e da deduplicação testada isoladamente no módulo puro.
+
+### Arquivos
+
+- **Criados**: `lib/repositories/analytics-cache.ts`, `tests/analytics-cache.test.mjs`.
+- **Alterados**: `lib/repositories/supabase.ts` (import de `analytics-cache`, caches em escopo de módulo, as 4 funções de `analytics` passam por `dedupeInFlight`/`logAnalyticsCall`), `components/real-dashboard.tsx` (`.catch` + toast de erro), `components/reports-manager.tsx` (`cancelled` + `.catch` + toast de erro nos 4 efeitos), `ETAPA-12-SUPABASE-DASHBOARD-RELATORIOS.md`.
+- **Nenhuma migration criada ou alterada** — conforme solicitado, a investigação ficou restrita à camada React/Next/Supabase.
+- **Nenhum outro módulo tocado**: autenticação, seleção de empresa, catálogo, estoque (regras de negócio), clientes, pedidos, pagamentos, cupons, fidelidade, loja pública e `.env.local` permanecem inalterados.
+
+### Validação executada (Correção 12E)
+
+| Comando | Resultado |
+|---|---|
+| `npm run lint` | ✅ sem erros/avisos |
+| `npm run type-check` | ✅ sem erros |
+| `npm run test` | ✅ 83/83 (77 anteriores + 6 novos) |
+| `npm run build` | ✅ build concluído, 13 rotas |
+
+### Commit
+
 Não commitado — aguardando aprovação, conforme solicitado.

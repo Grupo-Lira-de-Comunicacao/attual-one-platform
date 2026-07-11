@@ -1,0 +1,3 @@
+export function dedupeInFlight<T>(cache:Map<string,Promise<T>>,key:string,run:()=>Promise<T>):Promise<T>{const cached=cache.get(key);if(cached)return cached;const promise=run().finally(()=>{if(cache.get(key)===promise)cache.delete(key)});cache.set(key,promise);return promise}
+const callCounts=new Map<string,number>();
+export function logAnalyticsCall(event:"start"|"success"|"error",details:{key:string;companyId:string;period?:string;durationMs?:number;error?:string}):void{if(process.env.NODE_ENV==="production")return;if(event==="start")callCounts.set(details.key,(callCounts.get(details.key)??0)+1);console.debug("[analytics]",event,{...details,count:callCounts.get(details.key)??0,at:new Date().toISOString()})}
