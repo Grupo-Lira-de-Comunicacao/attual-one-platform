@@ -6,7 +6,9 @@ Dashboard e Relatórios agora leem indicadores reais do Supabase através de uma
 
 Nenhum projeto Supabase remoto foi criado ou alterado; migration e código são versionados.
 
-**Correção (mesmo dia):** a seção [Correção 12B — Ambiguidade de customer_id no relatório de clientes](#correção-12b--ambiguidade-de-customer_id-no-relatório-de-clientes), no fim deste documento, corrige um erro real (`column reference "customer_id" is ambiguous`) na função usada por `getCustomersReport`.
+**Correções (mesmo dia):**
+- [Correção 12B — Ambiguidade de customer_id no relatório de clientes](#correção-12b--ambiguidade-de-customer_id-no-relatório-de-clientes) — corrige `column reference "customer_id" is ambiguous` em `report_customers` (`getCustomersReport`).
+- [Correção 12C — Otimização do snapshot analítico](#correção-12c--otimização-do-snapshot-analítico) — corrige `canceling statement due to statement timeout` em `analytics_dashboard_snapshot` (`getSnapshot`).
 
 ## Por que não replicar o `AnalyticsService` local em Supabase
 
@@ -163,6 +165,73 @@ Migration aditiva `supabase/migrations/202607114100_fix_analytics_customer_id.sq
 | `npm run lint` | ✅ sem erros/avisos |
 | `npm run type-check` | ✅ sem erros |
 | `npm run test` | ✅ 73/73 (70 anteriores + 3 novos) |
+| `npm run build` | ✅ build concluído, 13 rotas |
+
+### Commit
+
+Não commitado — aguardando aprovação, conforme solicitado.
+
+---
+
+## Correção 12C — Otimização do snapshot analítico
+
+### O erro
+
+```
+Error: canceling statement due to statement timeout
+```
+
+Reportado em produção ao chamar `getSnapshot` (`lib/repositories/supabase.ts`), que executa a RPC `analytics_dashboard_snapshot`, definida em `supabase/migrations/202607114000_attual_one_analytics.sql`.
+
+### Causa raiz
+
+A versão original computava cada indicador com um `select ... into` independente, e cada um desses `select` reaplicava do zero o mesmo filtro `company_id + período` diretamente sobre a tabela base. Resultado: a função varria `orders` **7 vezes** e `payments` **2 vezes** dentro de uma única chamada — contagens, receita/ticket, pedidos por status, série temporal, ranking de produtos, ranking de clientes e pedidos recentes cada um lia `orders` de novo; recebido e pagamentos por forma cada um lia `payments` de novo. Sob volume real de dados (sem os índices certos cobrindo cada combinação de filtro), essas leituras repetidas somam I/O suficiente para estourar o timeout do Supabase.
+
+### Correção aplicada
+
+Migration aditiva `supabase/migrations/202607114200_fix_analytics_snapshot_timeout.sql`, com `create or replace function public.analytics_dashboard_snapshot(p_company uuid, p_period text) returns jsonb`:
+
+- **Mesma assinatura e mesmo formato de retorno** — todas as chaves do jsonb (`orders`, `openOrders`, `revenueCents`, `paidRevenueCents`, `averageTicketCents`, `customers`, `newCustomers`, `lowStock`, `outOfStock`, `stockValueCents`, `salesSeries`, `topProducts`, `topCustomers`, `ordersByStatus`, `paymentsByMethod`, `recentOrderIds`) permanecem idênticas — `lib/repositories/supabase.ts` não precisou de nenhuma alteração.
+- **Uma única varredura de `orders`**: CTE `period_orders`, marcada `MATERIALIZED` (Postgres 12+) para garantir que o planejador não a reexecute a cada CTE derivada — sem esse marcador, o Postgres pode "inlinear" uma CTE simples e voltar a escanear a tabela base em cada referência. Todas as contagens, o ranking, a série temporal e os pedidos recentes passaram a derivar dessa CTE já filtrada e materializada, em vez de reconsultar `orders`.
+- **Uma única varredura de `payments`**: mesma técnica, CTE `period_payments as materialized`.
+- **`jsonb_build_object` só no final**, montado a partir de CTEs de agregação já prontas (`order_counts`, `valid_agg`, `paid_agg`, `status_breakdown`, `item_sales`, `customer_sales`, `hourly_series`/`daily_series`, `method_breakdown`, `new_customers`, `stock_agg`), sem nenhuma agregação redundante antes dos filtros.
+- **Filtros Hoje/7d/30d preservados**: a série temporal calcula as duas variantes possíveis (`hourly_series` para hoje, `daily_series` para 7d/30d/tudo) a partir da mesma CTE `valid_orders` já materializada — nenhuma consulta adicional a `orders`, e o `case when p_period='today'` escolhe qual delas entra no resultado.
+- **Regras de negócio inalteradas**: pedidos cancelados continuam fora de `revenueCents`/`averageTicketCents`/ranking/série (via `valid_orders`, que filtra `status<>'cancelled'`); pagamentos estornados continuam descontados de `paidRevenueCents`/`paymentsByMethod` (`amount_cents-refunded_cents` para `status in ('paid','refunded')`); ranking de produtos e clientes continua limitado a 5; `lowStock`/`outOfStock`/`stockValueCents` continuam sem filtro de período (saldo real); isolamento por `company_id` e ausência de `security definer` preservados — RLS continua sendo o único mecanismo de isolamento.
+- A migration `202607114000_attual_one_analytics.sql` **não foi editada** — confirmado por `git status` e por teste automatizado que verifica que o arquivo original ainda contém o padrão de leitura repetida (prova de que a otimização é aditiva).
+
+### Índices adicionados
+
+Verifiquei os 7 índices sugeridos contra os já existentes desde a Etapa 8 (`supabase/migrations/202607110001_attual_one_foundation.sql`) e a Etapa 11B, e só criei os que realmente faltavam:
+
+| Índice sugerido | Situação |
+|---|---|
+| `orders(company_id, created_at)` | **Já existia** como `orders_company_date_idx(company_id, created_at desc)` — não recriado (evita índice redundante) |
+| `orders(company_id, status, created_at)` | **Novo** — `orders_company_status_created_idx` |
+| `orders(company_id, payment_status, created_at)` | **Novo** — `orders_company_payment_status_created_idx` |
+| `order_items(order_id)` | **Novo** — `order_items_order_idx` (a tabela não tinha nenhum índice; toda foreign key sem índice explícito não ganha um automaticamente no Postgres) |
+| `payments(company_id, order_id, status)` | **Novo** — `payments_company_order_status_idx` |
+| `stock_movements(company_id, product_id, created_at)` | **Novo** — `stock_movements_company_product_date_idx` |
+| `products(company_id, deleted_at)` | **Novo** — `products_company_deleted_idx` |
+
+Todos criados com `create index if not exists`, sem `concurrently` — mesmo padrão (transação única) de todas as migrations anteriores deste projeto.
+
+### Arquivos
+
+- **Criado**: `supabase/migrations/202607114200_fix_analytics_snapshot_timeout.sql`.
+- **Alterados**: `tests/analytics-service.test.mjs`, `tests/supabase-foundation.test.mjs`, `ETAPA-12-SUPABASE-DASHBOARD-RELATORIOS.md`. **Nenhum arquivo `.ts`/`.tsx` de produção mudou** — assinatura e formato de retorno da RPC são idênticos aos da Etapa 12 original.
+
+### Testes adicionados
+
+- `tests/analytics-service.test.mjs`: snapshot nos períodos hoje/7 dias/30 dias sem erro, com `salesSeries` no tamanho esperado (12/7/30); ranking de produtos e clientes nunca ultrapassa 5 itens no snapshot. As demais cenários pedidos (snapshot sem dados, pedidos pagos, pedidos cancelados fora do faturamento, estornos descontados) já tinham cobertura local da Etapa 12/12B, reaproveitada — o bug era específico do SQL em produção, não da lógica de negócio.
+- `tests/supabase-foundation.test.mjs`: confirma que a migration original ainda tem o padrão de leitura repetida (prova de que não foi tocada); confirma que a correção usa `create or replace function` com a mesma assinatura, `period_orders`/`period_payments` como `materialized`, exclusão de cancelados, desconto de estornos, exatamente 3 ocorrências de `limit 5` (ranking de produtos, clientes e pedidos recentes), ausência de `security definer`, presença dos 6 índices novos, ausência do índice redundante de `orders(company_id, created_at)`, e que nenhuma outra função/RPC foi recriada no arquivo.
+
+### Validação executada (Correção 12C)
+
+| Comando | Resultado |
+|---|---|
+| `npm run lint` | ✅ sem erros/avisos |
+| `npm run type-check` | ✅ sem erros |
+| `npm run test` | ✅ 76/76 (73 anteriores + 3 novos) |
 | `npm run build` | ✅ build concluído, 13 rotas |
 
 ### Commit
