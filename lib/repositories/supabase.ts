@@ -3,6 +3,7 @@ import type { RepositorySet } from "./contracts";
 import type { CatalogState, ProductInput } from "@/lib/catalog-types";
 import type { CommerceState, OrderDraft } from "@/lib/commerce-types";
 import type { RewardsState } from "@/lib/rewards-types";
+import type { AnalyticsPeriod, AnalyticsSnapshot } from "@/lib/analytics-types";
 const cents=(value:number)=>Math.round(value*100);
 const check=(error:{code?:string;message:string}|null)=>{if(!error)return;if(error.code==="23505")throw new Error("Já existe um registro com estes dados nesta empresa.");throw new Error(error.message)};
 const statusFor=(i:ProductInput)=>i.status==="inactive"?"inactive" as const:(i.trackStock&&i.currentStock===0?"out_of_stock" as const:"available" as const);
@@ -42,5 +43,20 @@ export function createSupabaseRepositories(client:SupabaseClient,companyId:strin
   refundPayment:async(paymentId,amount,reason,fullRefund)=>{const{error}=await client.rpc("refund_payment_leg",{p_payment:paymentId,p_amount_cents:fullRefund?null:cents(amount),p_reason:reason,p_key:crypto.randomUUID()});check(error);return loadRewards()},
   applyCouponToOrder:async(orderId,code)=>{const{error}=await client.rpc("apply_order_coupon",{p_order:orderId,p_code:code,p_key:`coupon:${orderId}:${code.trim().toUpperCase()}`});check(error);return loadRewards()},
   redeemReward:async(customerId,reason)=>{const{error}=await client.rpc("redeem_loyalty_reward",{p_customer:customerId,p_reason:reason??null,p_key:crypto.randomUUID()});check(error);return loadRewards()}
+ },analytics:{
+  getSnapshot:async(period)=>{const{data,error}=await client.rpc("analytics_dashboard_snapshot",{p_company:companyId,p_period:period});check(error);const s=data as Record<string,unknown>;return{
+   period:s.period as AnalyticsPeriod,referenceDate:s.referenceDate as string,orders:s.orders as number,openOrders:s.openOrders as number,
+   revenue:(s.revenueCents as number)/100,paidRevenue:(s.paidRevenueCents as number)/100,averageTicket:(s.averageTicketCents as number)/100,
+   customers:s.customers as number,newCustomers:s.newCustomers as number,lowStock:s.lowStock as number,outOfStock:s.outOfStock as number,
+   salesSeries:(s.salesSeries as{label:string;value:number}[]).map(p=>({label:p.label,value:p.value/100})),
+   topProducts:(s.topProducts as{id:string;name:string;quantity:number;revenueCents:number}[]).map(p=>({id:p.id,name:p.name,quantity:p.quantity,revenue:p.revenueCents/100})),
+   topCustomers:(s.topCustomers as{id:string;name:string;quantity:number;revenueCents:number}[]).map(c=>({id:c.id,name:c.name,quantity:c.quantity,revenue:c.revenueCents/100})),
+   ordersByStatus:(s.ordersByStatus as{status:string;count:number;totalCents:number}[]).map(o=>({status:o.status as never,count:o.count,total:o.totalCents/100})),
+   paymentsByMethod:(s.paymentsByMethod as{method:string;count:number;totalCents:number}[]).map(p=>({method:p.method as never,count:p.count,total:p.totalCents/100})),
+   stockValue:(s.stockValueCents as number)/100,recentOrderIds:s.recentOrderIds as string[]
+  } as AnalyticsSnapshot},
+  getProductsReport:async(period,search,page,pageSize)=>{const{data,error}=await client.rpc("report_products",{p_company:companyId,p_period:period,p_search:search||null,p_limit:pageSize,p_offset:(page-1)*pageSize});check(error);const rows=(data??[])as Record<string,unknown>[];return{rows:rows.map(r=>({id:r.product_id as string,name:r.name as string,sku:(r.sku as string|null)??undefined,quantity:Number(r.quantity),revenue:(r.revenue_cents as number)/100,currentStock:r.current_stock as number,minimumStock:r.minimum_stock as number,status:r.status as string})),totalCount:rows.length?Number(rows[0].total_count):0,page,pageSize}},
+  getCustomersReport:async(period,search,page,pageSize)=>{const{data,error}=await client.rpc("report_customers",{p_company:companyId,p_period:period,p_search:search||null,p_limit:pageSize,p_offset:(page-1)*pageSize});check(error);const rows=(data??[])as Record<string,unknown>[];return{rows:rows.map(r=>({id:r.customer_id as string,name:r.name as string,phone:(r.phone as string|null)??undefined,ordersCount:Number(r.orders_count),revenue:(r.revenue_cents as number)/100})),totalCount:rows.length?Number(rows[0].total_count):0,page,pageSize}},
+  getStockReport:async(search,page,pageSize)=>{const{data,error}=await client.rpc("report_stock",{p_company:companyId,p_search:search||null,p_limit:pageSize,p_offset:(page-1)*pageSize});check(error);const rows=(data??[])as Record<string,unknown>[];return{rows:rows.map(r=>({id:r.product_id as string,name:r.name as string,sku:(r.sku as string|null)??undefined,currentStock:r.current_stock as number,minimumStock:r.minimum_stock as number,status:r.status as string,trackStock:r.track_stock as boolean})),totalCount:rows.length?Number(rows[0].total_count):0,page,pageSize}}
  }};
 }

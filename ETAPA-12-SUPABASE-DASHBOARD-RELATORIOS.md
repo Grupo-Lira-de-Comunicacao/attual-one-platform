@@ -1,0 +1,110 @@
+# Etapa 12 — Conexão real do Dashboard e Relatórios ao Supabase
+
+## Resultado
+
+Dashboard e Relatórios agora leem indicadores reais do Supabase através de uma camada analítica própria (funções SQL somente leitura), em vez de calcular tudo no navegador a partir de tabelas completas. O modo `local` continua sendo o padrão ativo — `AnalyticsService` local recebeu apenas os ajustes necessários para ficar consistente com estornos parciais/totais (Etapa 11B) e ganhou os três relatórios paginados novos, sem mudar nenhum comportamento já homologado.
+
+Nenhum projeto Supabase remoto foi criado ou alterado; migration e código são versionados.
+
+## Por que não replicar o `AnalyticsService` local em Supabase
+
+O `AnalyticsService` local carrega catálogo, comércio e recompensas inteiros na memória e calcula tudo em JavaScript — well aceitável localmente (é só `localStorage`), mas exatamente o que o requisito 3 pediu para evitar em produção ("evite carregar todas as tabelas no navegador para calcular tudo no cliente"). Por isso a camada Supabase é uma peça de SQL própria: uma função (`analytics_dashboard_snapshot`) que devolve o resumo inteiro do dashboard em uma única viagem ao banco, e três funções paginadas (`report_products`, `report_customers`, `report_stock`) para as listas que podem crescer. Nenhuma delas transfere linha bruta de `order_items`/`payments`/etc. para o navegador — a agregação acontece inteiramente no Postgres.
+
+## Decisão de design: funções sem `security definer`
+
+Diferente de toda RPC de escrita já existente no projeto (que usa `security definer` porque precisa validar e escrever em múltiplas tabelas de forma controlada), as cinco funções desta etapa são **somente leitura** e **não usam `security definer`** — rodam com o privilégio de quem chama (o padrão do Postgres). Isso significa que as políticas RLS já existentes em `companies`, `products`, `orders`, `order_items`, `payments`, `customers` continuam se aplicando linha a linha, automaticamente. Isolamento por empresa não depende de eu lembrar de checar `is_company_member` em cada função nova — vem de graça da RLS, e é mais robusto (não existe forma de esquecer o check).
+
+## Arquivos criados
+
+- `supabase/migrations/202607114000_attual_one_analytics.sql` — coluna `companies.timezone` (aditiva) + 5 funções somente leitura, sem alterar nenhuma tabela, política ou RPC de escrita existente.
+- `lib/csv.ts` — `csvCell`/`csvRow`/`buildCsv`, extraídos para serem testáveis fora de um componente React (arquivos `.tsx` com JSX não passam pelo `node --test --experimental-strip-types`, que só remove tipos, não transforma JSX).
+- `tests/csv.test.mjs` — testes do `lib/csv.ts`.
+- `ETAPA-12-SUPABASE-DASHBOARD-RELATORIOS.md` — este documento.
+
+## Arquivos alterados
+
+- `lib/analytics-types.ts` — novos tipos `PaginatedResult<T>`, `ProductReportRow`, `CustomerReportRow`, `StockReportRow`.
+- `lib/analytics-service.ts` — `paidRevenue`/`paymentsByMethod.total` passaram a descontar `refundedAmount` (antes somavam o valor bruto de pagamentos `paid`, ignorando estornos parciais introduzidos na Etapa 11B); três métodos novos: `getProductsReport`, `getCustomersReport`, `getStockReport` (paginação e busca em memória, já que localmente os dados já estão carregados).
+- `lib/rewards-service.ts` — **correção de bug real, encontrada pelo teste novo desta etapa**: `refundPayment` mudava o `status` do pagamento para `"refunded"` mas nunca gravava `refundedAmount`, então o cálculo de recebido líquido continuava contando o valor estornado como recebido. Corrigido para gravar `refundedAmount` e atualizar `order.paymentStatus` diretamente, sem depender mais de `registerPayment`.
+- `lib/repositories/contracts.ts` — nova interface `AnalyticsRepository` (`getSnapshot`, `getProductsReport`, `getCustomersReport`, `getStockReport`), adicionada ao `RepositorySet`.
+- `lib/repositories/local.ts` — expõe `AnalyticsService` como `repositories.analytics`. Nenhuma mudança nas seções `catalog`/`commerce`/`rewards`.
+- `lib/repositories/supabase.ts` — nova seção `analytics` chamando as 5 funções da migration. Seções `catalog`, `commerce` e `rewards` **não foram tocadas** — conferido por diff (nenhuma linha de `createCategory`/`createOrder`/`registerPayment`/etc. mudou).
+- `components/real-dashboard.tsx` — deixou de instanciar `AnalyticsService`/`CommerceService` diretamente; passou a usar `createRepositories()`. Layout, textos e classes CSS preservados integralmente; únicas adições são mensagens de estado vazio ("Nenhum pedido no período.", "Nenhuma venda no período.") onde antes a lista simplesmente ficava em branco.
+- `components/reports-manager.tsx` — reescrito para usar o repositório: busca (`busca quando aplicável`), paginação real nas listas de produtos/clientes/estoque, nova tabela **Estoque** (gap que já existia desde a Etapa 5 — a especificação original pedia 5 relatórios, só 4 existiam), exportação CSV agora com dados reais e paginados (antes exportava só 5 números agregados fixos).
+- `app/page.tsx`, `app/[section]/page.tsx` — resolvem a empresa selecionada e repassam como prop para `RealDashboard`/`ReportsManager`, mesmo padrão das Etapas 9–11.
+- `app/globals.css` — CSS aditivo para `.report-pagination` (controles de paginação, inexistentes antes) e um ajuste responsivo em telas muito pequenas.
+- `tests/analytics-service.test.mjs`, `tests/supabase-foundation.test.mjs` — cobertura nova (detalhe abaixo).
+
+## Migration e RPCs/funções utilizadas
+
+| Função | Tipo | O que faz |
+|---|---|---|
+| `analytics_period_bounds` | Helper (plpgsql) | Calcula início/fim do período (hoje/7d/30d/tudo) no fuso horário da empresa (`companies.timezone`, novo, padrão `America/Sao_Paulo`). Reaproveitada pelas 4 funções abaixo. |
+| `analytics_dashboard_snapshot(p_company, p_period)` | RPC leitura | Snapshot completo do dashboard em uma chamada: vendas, pedidos, ticket médio, clientes, estoque baixo/esgotado, série temporal, ranking de produtos/clientes, pedidos por status, pagamentos por forma, pedidos recentes. |
+| `report_products(p_company, p_period, p_search, p_limit, p_offset)` | RPC leitura, paginada | Produtos com quantidade/receita vendida no período + saldo de estoque; busca por nome/SKU; `total_count` via `count(*) over()` para a UI montar a paginação. |
+| `report_customers(...)` | RPC leitura, paginada | Clientes com pedidos válidos e receita no período; busca por nome/telefone. |
+| `report_stock(p_company, p_search, p_limit, p_offset)` | RPC leitura, paginada | Saldo de estoque atual (não filtrado por período — é saldo real, igual ao dashboard); itens com saldo baixo/esgotado aparecem primeiro; busca por nome/SKU. |
+
+Nenhuma RPC de escrita (`confirm_order`, `cancel_order`, `create_order`, `update_order`, `adjust_stock`, `register_payment_leg`, `refund_payment_leg`, `apply_order_coupon`, `redeem_loyalty_reward`, `complete_order`) foi recriada ou alterada nesta migration — testado estruturalmente (ver abaixo).
+
+## Garantias implementadas (requisito 2)
+
+| Requisito | Como foi atendido |
+|---|---|
+| `company_id` obrigatório | Toda função recebe `p_company` e filtra explicitamente por ele; RLS reforça por trás (sem `security definer`) |
+| RLS respeitada | Funções sem `security definer` — rodam com o privilégio de quem chama, RLS de `products`/`orders`/`payments`/etc. se aplica normalmente |
+| Centavos | Todo cálculo interno usa `*_cents`; conversão para reais só na borda TS (`/100`), mesmo padrão de todas as etapas anteriores |
+| Filtros hoje/7d/30d | `analytics_period_bounds`, reaproveitada por todas as funções que precisam de período |
+| Fuso horário da empresa | `companies.timezone` (nova coluna, padrão `America/Sao_Paulo`); todo `date_trunc`/`extract(hour ...)` usa `at time zone v_tz` |
+| Sem duplicação de dados | Agregações usam `group by` nas chaves naturais (produto, cliente, status, forma); nenhum `join` produz produto cartesiano não intencional |
+| Pagamentos parciais/estornados | `paidRevenueCents`/`paymentsByMethod.total` somam `amount_cents - refunded_cents` apenas de pagamentos `paid`/`refunded` — nunca o bruto |
+| Pedidos cancelados fora do faturamento | `revenueCents`, `averageTicketCents`, ranking de produtos/clientes e `report_products`/`report_customers` sempre filtram `status<>'cancelled'` |
+| Estoque a partir do saldo real | `lowStock`/`outOfStock`/`stockValueCents`/`report_stock` leem `products.current_stock` diretamente, sem filtro de período |
+| Ranking só de pedidos válidos | Mesmo filtro `status<>'cancelled'` nos agregados de `topProducts`/`topCustomers`/`report_products`/`report_customers` |
+
+## Painel (requisito 4)
+
+- Indicadores reais do Supabase: dashboard e relatórios chamam `repo().analytics.*`, que em modo Supabase bate nas funções acima.
+- Atualiza após ação: como cada navegação/troca de período/página recarrega via `useEffect`, qualquer pedido/pagamento/estorno/movimentação criados em outra tela já aparecem ao voltar ou trocar o filtro — mesmo padrão de recarregar-no-mount usado desde a Etapa 9, sem necessidade de realtime.
+- Estados vazios: dashboard mostra "Nenhum pedido no período."/"Nenhuma venda no período." em vez de listas em branco; relatórios mostram "Nenhum registro encontrado." em cada tabela paginada vazia.
+- Layout do dashboard preservado integralmente (mesma estrutura, classes CSS e textos); relatórios ganharam busca, paginação e a tabela de Estoque, mas reaproveitam os mesmos componentes/estilos (`report-card`, `report-table`, `report-row` — grid fixo de 3 colunas, respeitado em todas as tabelas novas).
+- Responsivo: nenhuma media query existente foi removida; a única CSS nova (`.report-pagination`) já nasce com uma regra para telas ≤420px.
+
+## Como aplicar no Supabase
+
+1. Executar `supabase/migrations/202607114000_attual_one_analytics.sql` (SQL Editor ou CLI), depois das migrations anteriores (Etapas 8 a 11B).
+2. Opcional: ajustar `companies.timezone` para cada empresa se o fuso não for `America/Sao_Paulo` (`update companies set timezone='...' where id=...`).
+3. Nenhum seed novo é necessário — os relatórios leem os dados já semeados nas Etapas 9–11.
+
+## O que foi testado estruturalmente
+
+- `npm run test`: 70/70 (59 anteriores + 11 novos).
+- **Local, ponta a ponta, contra o `AnalyticsService` real (não mock)**: período sem vendas (estado vazio sem erro), pedidos cancelados fora do faturamento, pagamento parcial somado pelo valor efetivo, pagamento estornado descontado do recebido (este teste **encontrou e corrigiu** o bug do `refundPayment` acima), ranking de produtos paginado e ordenado, estoque baixo/esgotado priorizado no relatório.
+- **CSV**: `lib/csv.ts` testado isoladamente (`csvCell` escapa aspas, `csvRow`/`buildCsv` montam seções corretamente) — extraído do componente justamente para permitir este teste.
+- **Estrutural/SQL**: migration contém as 5 funções esperadas, nenhuma usa `security definer`, nenhuma RPC de escrita é recriada no arquivo.
+- **Isolamento por empresa**: teste estrutural confirma que toda chamada Supabase das 4 funções de leitura em `lib/repositories/supabase.ts` inclui `p_company:companyId`.
+
+## O que precisa ser testado no Supabase real
+
+Nada foi executado contra um projeto Supabase real (nenhum projeto remoto existe, mesma situação desde a Etapa 8). Antes de usar em produção, validar manualmente:
+
+- `analytics_dashboard_snapshot` e as 3 funções de relatório retornando dados corretos com RLS de um usuário real autenticado (não superusuário/service role).
+- Cálculo de fuso horário (`companies.timezone`) com o período "hoje" próximo à virada da meia-noite.
+- Paginação (`total_count`) com um volume de produtos/clientes maior que uma página.
+- Isolamento real: dois usuários de empresas diferentes não veem dados um do outro ao chamar as mesmas funções.
+
+## O que ainda permanece local
+
+- Autenticação, sessão, seleção de empresa.
+- Catálogo, estoque, clientes, pedidos, pagamentos, cupons, fidelidade (código, RPCs e componentes — nenhum tocado nesta etapa).
+- Loja pública (`/loja`).
+- `.env.local` — não foi tocado.
+
+## Validação executada
+
+| Comando | Resultado |
+|---|---|
+| `npm run lint` | ✅ sem erros/avisos |
+| `npm run type-check` | ✅ sem erros |
+| `npm run test` | ✅ 70/70 (59 anteriores + 11 novos) |
+| `npm run build` | ✅ build concluído, 13 rotas |

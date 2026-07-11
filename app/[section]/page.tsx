@@ -31,7 +31,7 @@ export default async function SectionPage({ params }: { params: Promise<{ sectio
   if (section === "produtos" || section === "estoque") { const companyId = await getSelectedCompanyId(); return <CatalogManager initialView={section === "produtos" ? "products" : "stock"} companyId={companyId ?? undefined} />; }
   if (section === "clientes" || section === "pedidos") { const companyId = await getSelectedCompanyId(); return <CommerceManager view={section === "clientes" ? "customers" : "orders"} companyId={companyId ?? undefined} />; }
   if (section === "pagamentos" || section === "cupons-e-fidelidade") { const companyId = await getSelectedCompanyId(); return <RewardsManager initialTab={section === "pagamentos" ? "payments" : "coupons"} companyId={companyId ?? undefined} />; }
-  if (section === "relatorios") return <ReportsManager />;
+  if (section === "relatorios") { const companyId = await getSelectedCompanyId(); return <ReportsManager companyId={companyId ?? undefined} />; }
   if (section === "importacao") return <LocalMigrationPanel />;
   const current = sections[section];
   if (!current) notFound();

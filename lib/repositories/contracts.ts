@@ -1,6 +1,7 @@
 import type { CatalogState, CategoryInput, ProductInput, ProductOptionInput, StockMovementType } from "@/lib/catalog-types";
 import type { CommerceState, CustomerInput, OrderDraft, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/commerce-types";
 import type { CouponInput, LoyaltyMode, RewardsState } from "@/lib/rewards-types";
+import type { AnalyticsPeriod, AnalyticsSnapshot, CustomerReportRow, PaginatedResult, ProductReportRow, StockReportRow } from "@/lib/analytics-types";
 export interface CatalogRepository {
   load(): Promise<CatalogState>;
   createCategory(input: CategoryInput): Promise<CatalogState>;
@@ -37,4 +38,10 @@ export interface RewardsRepository {
   applyCouponToOrder?(orderId: string, code: string): Promise<RewardsState>;
   redeemReward?(customerId: string, reason?: string): Promise<RewardsState>;
 }
-export interface RepositorySet { catalog: CatalogRepository; commerce: CommerceRepository; rewards: RewardsRepository; mode: "local"|"supabase"; }
+export interface AnalyticsRepository {
+  getSnapshot(period: AnalyticsPeriod): Promise<AnalyticsSnapshot>;
+  getProductsReport(period: AnalyticsPeriod, search: string, page: number, pageSize: number): Promise<PaginatedResult<ProductReportRow>>;
+  getCustomersReport(period: AnalyticsPeriod, search: string, page: number, pageSize: number): Promise<PaginatedResult<CustomerReportRow>>;
+  getStockReport(search: string, page: number, pageSize: number): Promise<PaginatedResult<StockReportRow>>;
+}
+export interface RepositorySet { catalog: CatalogRepository; commerce: CommerceRepository; rewards: RewardsRepository; analytics: AnalyticsRepository; mode: "local"|"supabase"; }
