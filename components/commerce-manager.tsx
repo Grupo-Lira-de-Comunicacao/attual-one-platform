@@ -1,8 +1,10 @@
 "use client";
-import { useEffect,useMemo,useState } from "react";
+import { useEffect,useMemo,useRef,useState } from "react";
 import { CalendarDays,ChevronRight,Edit3,LayoutGrid,List,MapPin,Minus,Package,Phone,Plus,Search,ShoppingBag,Trash2,UserRound,X } from "lucide-react";
-import { createBrowserCommerceService } from "@/lib/commerce-service";
-import { createBrowserCatalogService } from "@/lib/catalog-service";
+import { createRepositories } from "@/lib/repositories/factory";
+import type { RepositorySet } from "@/lib/repositories/contracts";
+import { getSupabasePublicConfig } from "@/lib/supabase/config";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { CatalogState,Product } from "@/lib/catalog-types";
 import type { Address,CommerceState,Customer,CustomerInput,Order,OrderDraft,OrderItem,OrderStatus } from "@/lib/commerce-types";
 
@@ -13,23 +15,30 @@ const statusFlow:OrderStatus[]=["new","confirmed","preparing","ready","out_for_d
 const emptyAddress:Address={street:"",number:"",complement:"",district:"",city:"Caçapava",postalCode:""};
 const emptyCustomer:CustomerInput={name:"",phone:"",email:"",taxId:"",address:{...emptyAddress},notes:"",status:"active"};
 
-export function CommerceManager({view}:{view:"customers"|"orders"}){
+export function CommerceManager({view,companyId}:{view:"customers"|"orders";companyId?:string}){
  const [state,setState]=useState<CommerceState|null>(null),[catalog,setCatalog]=useState<CatalogState|null>(null),[notice,setNotice]=useState<Notice>(null);
  const [search,setSearch]=useState(""),[status,setStatus]=useState("all"),[payment,setPayment]=useState("all"),[period,setPeriod]=useState("all"),[layout,setLayout]=useState<"board"|"table">("board");
  const [customerForm,setCustomerForm]=useState<CustomerInput|null>(null),[editingCustomer,setEditingCustomer]=useState<string|null>(null),[orderForm,setOrderForm]=useState<OrderDraft|null>(null),[editingOrder,setEditingOrder]=useState<string|null>(null),[details,setDetails]=useState<Order|null>(null);
- useEffect(()=>{const t=setTimeout(()=>{setState(createBrowserCommerceService().load());setCatalog(createBrowserCatalogService().load());},0);return()=>clearTimeout(t);},[]);
+ const repoRef=useRef<RepositorySet|null>(null);
+ const repo=():RepositorySet=>{if(repoRef.current)return repoRef.current;const mode=getSupabasePublicConfig().mode;repoRef.current=mode==="supabase"&&companyId?createRepositories({storage:window.localStorage,supabase:createSupabaseBrowserClient(),companyId}):createRepositories({storage:window.localStorage});return repoRef.current;};
  const inform=(type:"success"|"error",text:string)=>{setNotice({type,text});setTimeout(()=>setNotice(null),3500);};
- const act=(fn:()=>CommerceState,msg:string)=>{try{setState(fn());setCatalog(createBrowserCatalogService().load());inform("success",msg);return true;}catch(e){inform("error",e instanceof Error?e.message:"Não foi possível concluir.");return false;}};
+ useEffect(()=>{
+  repoRef.current=null;let cancelled=false;
+  Promise.all([repo().commerce.load(),repo().catalog.load()]).then(([c,cat])=>{if(!cancelled){setState(c);setCatalog(cat);}}).catch(e=>inform("error",e instanceof Error?e.message:"Não foi possível carregar a operação."));
+  return()=>{cancelled=true};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[companyId]);
+ const act=async(fn:()=>Promise<CommerceState>,msg:string):Promise<CommerceState|null>=>{try{const result=await fn();setState(result);setCatalog(await repo().catalog.load());inform("success",msg);return result;}catch(e){inform("error",e instanceof Error?e.message:"Não foi possível concluir.");return null;}};
  const customers=useMemo(()=>state?.customers.filter(c=>`${c.name} ${c.phone} ${c.email??""}`.toLowerCase().includes(search.toLowerCase())&&(status==="all"||c.status===status))??[],[state,search,status]);
  const orders=useMemo(()=>{const reference=Math.max(...(state?.orders.map(o=>Date.parse(o.createdAt))??[0]));return state?.orders.filter(o=>{const text=`${o.number} ${o.customerName} ${o.customerPhone??""}`.toLowerCase();const after=period==="today"?new Date(o.createdAt).toDateString()===new Date(reference).toDateString():period==="7d"?reference-Date.parse(o.createdAt)<=604800000:true;return text.includes(search.toLowerCase())&&(status==="all"||o.status===status)&&(payment==="all"||o.paymentStatus===payment)&&after;})??[];},[state,search,status,payment,period]);
  if(!state||!catalog)return <div className="page"><div className="catalog-loading">Carregando operação...</div></div>;
  const openCustomer=(c?:Customer)=>{setEditingCustomer(c?.id??null);setCustomerForm(c?{name:c.name,phone:c.phone,email:c.email,taxId:c.taxId,address:{...c.address},notes:c.notes,status:c.status}:{...emptyCustomer,address:{...emptyAddress}});};
- const saveCustomer=()=>{if(!customerForm)return;const ok=act(()=>editingCustomer?createBrowserCommerceService().updateCustomer(editingCustomer,customerForm):createBrowserCommerceService().createCustomer(customerForm),editingCustomer?"Cliente atualizado.":"Cliente cadastrado.");if(ok)setCustomerForm(null);};
- const removeCustomer=(c:Customer)=>{if(confirm(`Excluir “${c.name}”? O histórico dos pedidos será preservado.`))act(()=>createBrowserCommerceService().deleteCustomer(c.id),"Cliente excluído.");};
+ const saveCustomer=async()=>{if(!customerForm)return;const result=await act(()=>editingCustomer?repo().commerce.updateCustomer(editingCustomer,customerForm):repo().commerce.createCustomer(customerForm),editingCustomer?"Cliente atualizado.":"Cliente cadastrado.");if(result)setCustomerForm(null);};
+ const removeCustomer=async(c:Customer)=>{if(confirm(`Excluir “${c.name}”? O histórico dos pedidos será preservado.`))await act(()=>repo().commerce.deleteCustomer(c.id),"Cliente excluído.");};
  const emptyOrder=():OrderDraft=>({customerId:undefined,customerName:"",customerPhone:"",items:[],fulfillment:"pickup",deliveryAddress:{...emptyAddress},discount:0,deliveryFee:0,paymentMethod:"pix",paymentStatus:"pending"});
  const openOrder=(o?:Order)=>{setEditingOrder(o?.id??null);setOrderForm(o?{customerId:o.customerId,customerName:o.customerName,customerPhone:o.customerPhone,items:o.items.map(i=>({...i,additions:[...i.additions]})),fulfillment:o.fulfillment,deliveryAddress:o.deliveryAddress?{...o.deliveryAddress}:{...emptyAddress},discount:o.discount,deliveryFee:o.deliveryFee,paymentMethod:o.paymentMethod,paymentStatus:o.paymentStatus}:emptyOrder());};
- const saveOrder=()=>{if(!orderForm)return;const ok=act(()=>editingOrder?createBrowserCommerceService().updateOrder(editingOrder,orderForm):createBrowserCommerceService().createOrder(orderForm),editingOrder?"Pedido atualizado.":"Pedido criado com sucesso.");if(ok)setOrderForm(null);};
- const changeStatus=(o:Order,next:OrderStatus)=>{let reason:string|undefined;if(next==="cancelled"){reason=prompt("Informe o motivo do cancelamento:")??undefined;if(!reason)return;}const ok=act(()=>createBrowserCommerceService().changeStatus(o.id,next,reason),`Pedido #${o.number} atualizado.`);if(ok)setDetails(prev=>prev?.id===o.id?createBrowserCommerceService().load().orders.find(x=>x.id===o.id)??null:prev);};
+ const saveOrder=async()=>{if(!orderForm)return;const result=await act(()=>editingOrder?repo().commerce.updateOrder(editingOrder,orderForm):repo().commerce.createOrder(orderForm),editingOrder?"Pedido atualizado.":"Pedido criado com sucesso.");if(result)setOrderForm(null);};
+ const changeStatus=async(o:Order,next:OrderStatus)=>{let reason:string|undefined;if(next==="cancelled"){reason=prompt("Informe o motivo do cancelamento:")??undefined;if(!reason)return;}const result=await act(()=>repo().commerce.changeStatus(o.id,next,reason),`Pedido #${o.number} atualizado.`);if(result)setDetails(prev=>prev?.id===o.id?result.orders.find(x=>x.id===o.id)??null:prev);};
  const history=(customerId:string)=>state.orders.filter(o=>o.customerId===customerId);
  return <div className="page commerce-page">{notice&&<div className={`toast ${notice.type}`}>{notice.text}<button onClick={()=>setNotice(null)}><X size={15}/></button></div>}
   <section className="page-heading catalog-heading"><div><p className="eyebrow">OPERAÇÃO · HAMBURGUERIA 07</p><h1>{view==="customers"?"Clientes":"Pedidos"}</h1><p>{view==="customers"?"Relacionamento e histórico em um só lugar.":"Acompanhe cada pedido do recebimento à conclusão."}</p></div><button className="primary-button" onClick={()=>view==="customers"?openCustomer():openOrder()}><Plus size={18}/>{view==="customers"?"Novo cliente":"Novo pedido"}</button></section>

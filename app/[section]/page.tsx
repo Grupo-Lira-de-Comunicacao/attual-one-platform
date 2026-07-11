@@ -29,8 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<{ section: 
 export default async function SectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
   if (section === "produtos" || section === "estoque") { const companyId = await getSelectedCompanyId(); return <CatalogManager initialView={section === "produtos" ? "products" : "stock"} companyId={companyId ?? undefined} />; }
-  if (section === "clientes") return <CommerceManager view="customers" />;
-  if (section === "pedidos") return <CommerceManager view="orders" />;
+  if (section === "clientes" || section === "pedidos") { const companyId = await getSelectedCompanyId(); return <CommerceManager view={section === "clientes" ? "customers" : "orders"} companyId={companyId ?? undefined} />; }
   if (section === "pagamentos") return <RewardsManager initialTab="payments" />;
   if (section === "cupons-e-fidelidade") return <RewardsManager initialTab="coupons" />;
   if (section === "relatorios") return <ReportsManager />;

@@ -14,6 +14,14 @@ export interface CatalogRepository {
   updateProductOption?(id: string, input: ProductOptionInput): Promise<CatalogState>;
   deleteProductOption?(id: string): Promise<CatalogState>;
 }
-export interface CommerceRepository { load(): Promise<CommerceState>; createCustomer(input: CustomerInput): Promise<CommerceState>; createOrder(input: OrderDraft): Promise<CommerceState>; changeStatus(id: string, status: OrderStatus, reason?: string): Promise<CommerceState>; }
+export interface CommerceRepository {
+  load(): Promise<CommerceState>;
+  createCustomer(input: CustomerInput): Promise<CommerceState>;
+  updateCustomer(id: string, input: CustomerInput): Promise<CommerceState>;
+  deleteCustomer(id: string): Promise<CommerceState>;
+  createOrder(input: OrderDraft): Promise<CommerceState>;
+  updateOrder(id: string, input: OrderDraft): Promise<CommerceState>;
+  changeStatus(id: string, status: OrderStatus, reason?: string): Promise<CommerceState>;
+}
 export interface RewardsRepository { load(): Promise<RewardsState>; createCoupon(input: CouponInput): Promise<RewardsState>; registerPayment(orderId: string, method: "pix"|"cash"|"credit_card"|"debit_card", status: "pending"|"paid"|"refunded"): Promise<RewardsState>; }
 export interface RepositorySet { catalog: CatalogRepository; commerce: CommerceRepository; rewards: RewardsRepository; mode: "local"|"supabase"; }
