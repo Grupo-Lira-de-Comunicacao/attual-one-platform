@@ -6,6 +6,8 @@ Dashboard e Relatórios agora leem indicadores reais do Supabase através de uma
 
 Nenhum projeto Supabase remoto foi criado ou alterado; migration e código são versionados.
 
+**Correção (mesmo dia):** a seção [Correção 12B — Ambiguidade de customer_id no relatório de clientes](#correção-12b--ambiguidade-de-customer_id-no-relatório-de-clientes), no fim deste documento, corrige um erro real (`column reference "customer_id" is ambiguous`) na função usada por `getCustomersReport`.
+
 ## Por que não replicar o `AnalyticsService` local em Supabase
 
 O `AnalyticsService` local carrega catálogo, comércio e recompensas inteiros na memória e calcula tudo em JavaScript — well aceitável localmente (é só `localStorage`), mas exatamente o que o requisito 3 pediu para evitar em produção ("evite carregar todas as tabelas no navegador para calcular tudo no cliente"). Por isso a camada Supabase é uma peça de SQL própria: uma função (`analytics_dashboard_snapshot`) que devolve o resumo inteiro do dashboard em uma única viagem ao banco, e três funções paginadas (`report_products`, `report_customers`, `report_stock`) para as listas que podem crescer. Nenhuma delas transfere linha bruta de `order_items`/`payments`/etc. para o navegador — a agregação acontece inteiramente no Postgres.
@@ -108,3 +110,61 @@ Nada foi executado contra um projeto Supabase real (nenhum projeto remoto existe
 | `npm run type-check` | ✅ sem erros |
 | `npm run test` | ✅ 70/70 (59 anteriores + 11 novos) |
 | `npm run build` | ✅ build concluído, 13 rotas |
+
+---
+
+## Correção 12B — Ambiguidade de customer_id no relatório de clientes
+
+### O erro
+
+```
+Error: column reference "customer_id" is ambiguous
+```
+
+Reportado em produção ao chamar `getCustomersReport` (`lib/repositories/supabase.ts`), que executa a RPC `report_customers`, definida em `supabase/migrations/202607114000_attual_one_analytics.sql`.
+
+### Causa raiz
+
+`report_customers` é `language plpgsql` e sua assinatura declara `returns table(customer_id uuid, name text, phone text, orders_count bigint, revenue_cents bigint, total_count bigint)`. Em PL/pgSQL, cada coluna de um `returns table(...)` fica acessível como um identificador dentro do corpo da função — como se fosse uma variável declarada. A CTE `sales` fazia:
+
+```sql
+select customer_id as id, count(*) as cnt, sum(total_cents) as rev
+from orders where company_id=p_company and deleted_at is null and status<>'cancelled' and customer_id is not null and created_at>=v_start and created_at<=v_end
+group by customer_id
+```
+
+sem nenhum alias para a tabela `orders`. Toda referência a `customer_id` ali ficou ambígua entre a coluna `orders.customer_id` e o parâmetro de saída `customer_id`. As demais partes da mesma função (CTE `base`, select final) e as funções `report_products`/`report_stock` já qualificavam todas as colunas com alias (`c.`, `p.`, `oi.`, `base.`) e nunca tiveram esse problema — só a CTE `sales` de `report_customers` estava sem alias.
+
+### Correção aplicada
+
+Migration aditiva `supabase/migrations/202607114100_fix_analytics_customer_id.sql`, com `create or replace function public.report_customers(...)`:
+
+- **Mesma assinatura**: `(p_company uuid, p_period text, p_search text, p_limit int, p_offset int)`.
+- **Mesmo tipo de retorno**: `table(customer_id uuid, name text, phone text, orders_count bigint, revenue_cents bigint, total_count bigint)`.
+- **Mesma paginação, filtro de período, busca e RLS** (função continua sem `security definer`, isolamento por empresa continua vindo das políticas RLS de `orders`/`customers`, como documentado na Etapa 12 original).
+- Única mudança: a CTE `sales` passou a usar o alias `o` para `orders`, qualificando explicitamente `o.customer_id`, `o.company_id`, `o.deleted_at`, `o.status`, `o.created_at` — a mesma disciplina que `report_products` já seguia.
+- A migration `202607114000_attual_one_analytics.sql` **não foi editada** — confirmado por `git status` (sem alterações) e por teste automatizado que verifica que o arquivo original ainda contém o padrão sem alias (prova de que a correção é aditiva, não uma edição retroativa).
+
+### Arquivos
+
+- **Criado**: `supabase/migrations/202607114100_fix_analytics_customer_id.sql`.
+- **Alterados**: `tests/analytics-service.test.mjs`, `tests/csv.test.mjs`, `tests/supabase-foundation.test.mjs`, `ETAPA-12-SUPABASE-DASHBOARD-RELATORIOS.md`. **Nenhum arquivo `.ts`/`.tsx` de produção mudou** — `lib/repositories/supabase.ts` já chamava `report_customers` corretamente (nome, parâmetros e mapeamento de colunas de retorno inalterados); o bug era inteiramente dentro do corpo da função SQL.
+
+### Testes adicionados
+
+- `tests/analytics-service.test.mjs`: relatório de clientes reflete pedidos válidos de um cliente com histórico **e** lista corretamente um cliente recém-criado sem nenhum pedido (`ordersCount: 0`, `revenue: 0`) — cobertura de negócio via `AnalyticsService` local (a implementação local nunca teve o bug de ambiguidade, mas a regra de negócio é a mesma que a função SQL precisa respeitar).
+- `tests/csv.test.mjs`: exportação CSV da seção "Clientes" com um cliente com pedidos e um sem pedidos, validando formatação e valores.
+- `tests/supabase-foundation.test.mjs`: teste estrutural que (1) confirma a migration original ainda contém o padrão `group by customer_id` sem alias — prova de que não foi tocada; (2) confirma a migration de correção usa `group by o.customer_id` (qualificado); (3) confirma ausência de `security definer`; (4) confirma que nenhuma outra função/RPC foi recriada no arquivo de correção.
+
+### Validação executada (Correção 12B)
+
+| Comando | Resultado |
+|---|---|
+| `npm run lint` | ✅ sem erros/avisos |
+| `npm run type-check` | ✅ sem erros |
+| `npm run test` | ✅ 73/73 (70 anteriores + 3 novos) |
+| `npm run build` | ✅ build concluído, 13 rotas |
+
+### Commit
+
+Não commitado — aguardando aprovação, conforme solicitado.
