@@ -27,5 +27,6 @@ export const initialCatalogState: CatalogState = {
     price: Number(price), sku: String(sku), trackStock: true, currentStock: Number(currentStock), minimumStock: Number(minimumStock),
     status: Number(currentStock) === 0 ? "out_of_stock" as const : "available" as const, createdAt: now, updatedAt: now,
   })),
+  productOptions: [],
   movements: [],
 };

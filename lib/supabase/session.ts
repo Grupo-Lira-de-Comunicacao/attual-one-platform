@@ -1,5 +1,8 @@
+import { cookies } from "next/headers";
 import { createSupabaseServerClient } from "./server";
 import { getSupabasePublicConfig } from "./config";
 export type CompanyRole = "owner" | "manager" | "attendant" | "operator";
 export interface CompanyMembership { companyId: string; companyName: string; role: CompanyRole; }
 export async function getSessionContext() { const config = getSupabasePublicConfig(); if (config.mode === "local") return { mode: "local" as const, user: null, memberships: [] as CompanyMembership[] }; if (!config.configured) return { mode: "misconfigured" as const, user: null, memberships: [] as CompanyMembership[] }; const supabase = await createSupabaseServerClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return { mode: "supabase" as const, user: null, memberships: [] as CompanyMembership[] }; const { data } = await supabase.from("company_users").select("company_id, role, companies(name)").eq("user_id", user.id).eq("status", "active"); const memberships = (data ?? []).map((row) => ({ companyId: row.company_id, companyName: Array.isArray(row.companies) ? row.companies[0]?.name ?? "Empresa" : (row.companies as { name?: string } | null)?.name ?? "Empresa", role: row.role as CompanyRole })); return { mode: "supabase" as const, user, memberships }; }
+
+export async function getSelectedCompanyId(): Promise<string | null> { if (getSupabasePublicConfig().mode !== "supabase") return null; const store = await cookies(); return store.get("attual_company_id")?.value ?? null; }

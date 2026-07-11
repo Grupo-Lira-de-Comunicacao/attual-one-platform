@@ -7,6 +7,7 @@ import { CommerceManager } from "@/components/commerce-manager";
 import { RewardsManager } from "@/components/rewards-manager";
 import { ReportsManager } from "@/components/reports-manager";
 import { LocalMigrationPanel } from "@/components/local-migration-panel";
+import { getSelectedCompanyId } from "@/lib/supabase/session";
 
 const sections: Record<string, { title: string; description: string }> = {
   pedidos: { title: "Pedidos", description: "Acompanhe pedidos e status da operação." },
@@ -27,8 +28,7 @@ export async function generateMetadata({ params }: { params: Promise<{ section: 
 
 export default async function SectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
-  if (section === "produtos") return <CatalogManager initialView="products" />;
-  if (section === "estoque") return <CatalogManager initialView="stock" />;
+  if (section === "produtos" || section === "estoque") { const companyId = await getSelectedCompanyId(); return <CatalogManager initialView={section === "produtos" ? "products" : "stock"} companyId={companyId ?? undefined} />; }
   if (section === "clientes") return <CommerceManager view="customers" />;
   if (section === "pedidos") return <CommerceManager view="orders" />;
   if (section === "pagamentos") return <RewardsManager initialTab="payments" />;

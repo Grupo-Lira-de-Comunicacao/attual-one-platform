@@ -43,16 +43,28 @@ export interface StockMovement {
   createdAt: string;
 }
 
+export interface ProductOption {
+  id: string;
+  companyId: string;
+  productId: string;
+  name: string;
+  price: number;
+  status: "active" | "inactive";
+  displayOrder: number;
+}
+
 export interface CatalogState {
   version: 1;
   company: { id: string; name: string };
   categories: Category[];
   products: Product[];
+  productOptions: ProductOption[];
   movements: StockMovement[];
 }
 
 export type CategoryInput = Pick<Category, "name" | "description" | "status" | "displayOrder">;
 export type ProductInput = Omit<Product, "id" | "companyId" | "createdAt" | "updatedAt">;
+export type ProductOptionInput = Pick<ProductOption, "productId" | "name" | "price" | "status" | "displayOrder">;
 
 export interface StorageAdapter {
   getItem(key: string): string | null;

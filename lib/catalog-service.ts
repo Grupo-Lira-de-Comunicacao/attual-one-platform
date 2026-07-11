@@ -18,7 +18,7 @@ export class CatalogService {
       this.save(initial);
       return initial;
     }
-    try { return JSON.parse(stored) as CatalogState; }
+    try { const parsed = JSON.parse(stored) as CatalogState; return { ...parsed, productOptions: parsed.productOptions ?? [] }; }
     catch { throw new Error("Não foi possível ler os dados locais."); }
   }
 

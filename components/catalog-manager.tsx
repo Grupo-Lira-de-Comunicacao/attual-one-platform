@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Boxes, ChevronDown, Edit3, Package, Plus, Search, Trash2, X } from "lucide-react";
-import { createBrowserCatalogService } from "@/lib/catalog-service";
+import { createRepositories } from "@/lib/repositories/factory";
+import type { CatalogRepository } from "@/lib/repositories/contracts";
+import { getSupabasePublicConfig } from "@/lib/supabase/config";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { CatalogState, Category, CategoryInput, Product, ProductInput, StockMovementType } from "@/lib/catalog-types";
 
 type View = "products" | "categories" | "stock";
@@ -10,7 +13,7 @@ type Notice = { type: "success" | "error"; text: string } | null;
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const emptyProduct = (categoryId = ""): ProductInput => ({ name: "", description: "", categoryId, price: 0, imageUrl: "", sku: "", trackStock: true, currentStock: 0, minimumStock: 0, status: "available" });
 
-export function CatalogManager({ initialView }: { initialView: View }) {
+export function CatalogManager({ initialView, companyId }: { initialView: View; companyId?: string }) {
   const [state, setState] = useState<CatalogState | null>(null);
   const [view, setView] = useState<View>(initialView);
   const [search, setSearch] = useState("");
@@ -22,14 +25,20 @@ export function CatalogManager({ initialView }: { initialView: View }) {
   const [categoryForm, setCategoryForm] = useState<CategoryInput | null>(null);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [movementProduct, setMovementProduct] = useState<Product | null>(null);
+  const repoRef = useRef<CatalogRepository | null>(null);
+
+  const repo = (): CatalogRepository => { if (repoRef.current) return repoRef.current; const mode = getSupabasePublicConfig().mode; repoRef.current = mode === "supabase" && companyId ? createRepositories({ storage: window.localStorage, supabase: createSupabaseBrowserClient(), companyId }).catalog : createRepositories({ storage: window.localStorage }).catalog; return repoRef.current; };
+  const inform = (type: "success" | "error", text: string) => { setNotice({ type, text }); window.setTimeout(() => setNotice(null), 3500); };
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setState(createBrowserCatalogService().load()), 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-  const service = () => createBrowserCatalogService();
-  const inform = (type: "success" | "error", text: string) => { setNotice({ type, text }); window.setTimeout(() => setNotice(null), 3500); };
-  const act = (fn: () => CatalogState, message: string) => { try { setState(fn()); inform("success", message); return true; } catch (error) { inform("error", error instanceof Error ? error.message : "Não foi possível concluir."); return false; } };
+    repoRef.current = null;
+    let cancelled = false;
+    repo().load().then(s => { if (!cancelled) setState(s); }).catch(error => inform("error", error instanceof Error ? error.message : "Não foi possível carregar o catálogo."));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId]);
+
+  const act = async (fn: () => Promise<CatalogState>, message: string) => { try { setState(await fn()); inform("success", message); return true; } catch (error) { inform("error", error instanceof Error ? error.message : "Não foi possível concluir."); return false; } };
 
   const filteredProducts = useMemo(() => state?.products.filter(product => {
     const text = `${product.name} ${product.sku ?? ""}`.toLowerCase();
@@ -41,10 +50,10 @@ export function CatalogManager({ initialView }: { initialView: View }) {
   const title = view === "products" ? "Produtos" : view === "categories" ? "Categorias" : "Estoque";
 
   const openProduct = (product?: Product) => { setEditingProduct(product?.id ?? null); setProductForm(product ? { categoryId: product.categoryId, name: product.name, description: product.description, price: product.price, promotionalPrice: product.promotionalPrice, imageUrl: product.imageUrl, sku: product.sku, trackStock: product.trackStock, currentStock: product.currentStock, minimumStock: product.minimumStock, status: product.status } : emptyProduct(state.categories[0]?.id)); };
-  const saveProduct = () => { if (!productForm) return; const ok = act(() => editingProduct ? service().updateProduct(editingProduct, productForm) : service().createProduct(productForm), editingProduct ? "Produto atualizado com sucesso." : "Produto criado com sucesso."); if (ok) setProductForm(null); };
-  const saveCategory = () => { if (!categoryForm) return; const ok = act(() => editingCategory ? service().updateCategory(editingCategory, categoryForm) : service().createCategory(categoryForm), editingCategory ? "Categoria atualizada com sucesso." : "Categoria criada com sucesso."); if (ok) setCategoryForm(null); };
-  const removeProduct = (product: Product) => { if (window.confirm(`Excluir “${product.name}”? Esta ação também remove seu histórico de estoque.`)) act(() => service().deleteProduct(product.id), "Produto excluído."); };
-  const removeCategory = (category: Category) => { if (window.confirm(`Excluir a categoria “${category.name}”?`)) act(() => service().deleteCategory(category.id), "Categoria excluída."); };
+  const saveProduct = async () => { if (!productForm) return; const ok = await act(() => editingProduct ? repo().updateProduct(editingProduct, productForm) : repo().createProduct(productForm), editingProduct ? "Produto atualizado com sucesso." : "Produto criado com sucesso."); if (ok) setProductForm(null); };
+  const saveCategory = async () => { if (!categoryForm) return; const ok = await act(() => editingCategory ? repo().updateCategory(editingCategory, categoryForm) : repo().createCategory(categoryForm), editingCategory ? "Categoria atualizada com sucesso." : "Categoria criada com sucesso."); if (ok) setCategoryForm(null); };
+  const removeProduct = async (product: Product) => { if (window.confirm(`Excluir “${product.name}”? Esta ação também remove seu histórico de estoque.`)) await act(() => repo().deleteProduct(product.id), "Produto excluído."); };
+  const removeCategory = async (category: Category) => { if (window.confirm(`Excluir a categoria “${category.name}”?`)) await act(() => repo().deleteCategory(category.id), "Categoria excluída."); };
 
   return <div className="page catalog-page">
     {notice && <div className={`toast ${notice.type}`} role="status">{notice.text}<button onClick={() => setNotice(null)}><X size={15}/></button></div>}
@@ -62,7 +71,7 @@ export function CatalogManager({ initialView }: { initialView: View }) {
 
     {productForm && <ProductModal value={productForm} categories={state.categories} editing={Boolean(editingProduct)} onChange={setProductForm} onClose={()=>setProductForm(null)} onSave={saveProduct}/>} 
     {categoryForm && <CategoryModal value={categoryForm} editing={Boolean(editingCategory)} onChange={setCategoryForm} onClose={()=>setCategoryForm(null)} onSave={saveCategory}/>} 
-    {movementProduct && <MovementModal product={movementProduct} onClose={()=>setMovementProduct(null)} onSave={(type, quantity, reason) => { const ok=act(()=>service().moveStock(movementProduct.id,type,quantity,reason),"Estoque atualizado com sucesso."); if(ok)setMovementProduct(null); }}/>} 
+    {movementProduct && <MovementModal product={movementProduct} onClose={()=>setMovementProduct(null)} onSave={async (type, quantity, reason) => { const ok = await act(() => repo().moveStock(movementProduct.id, type, quantity, reason), "Estoque atualizado com sucesso."); if (ok) setMovementProduct(null); }}/>}
   </div>;
 }
 
