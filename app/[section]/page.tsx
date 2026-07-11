@@ -30,8 +30,7 @@ export default async function SectionPage({ params }: { params: Promise<{ sectio
   const { section } = await params;
   if (section === "produtos" || section === "estoque") { const companyId = await getSelectedCompanyId(); return <CatalogManager initialView={section === "produtos" ? "products" : "stock"} companyId={companyId ?? undefined} />; }
   if (section === "clientes" || section === "pedidos") { const companyId = await getSelectedCompanyId(); return <CommerceManager view={section === "clientes" ? "customers" : "orders"} companyId={companyId ?? undefined} />; }
-  if (section === "pagamentos") return <RewardsManager initialTab="payments" />;
-  if (section === "cupons-e-fidelidade") return <RewardsManager initialTab="coupons" />;
+  if (section === "pagamentos" || section === "cupons-e-fidelidade") { const companyId = await getSelectedCompanyId(); return <RewardsManager initialTab={section === "pagamentos" ? "payments" : "coupons"} companyId={companyId ?? undefined} />; }
   if (section === "relatorios") return <ReportsManager />;
   if (section === "importacao") return <LocalMigrationPanel />;
   const current = sections[section];

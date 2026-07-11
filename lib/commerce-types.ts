@@ -3,7 +3,7 @@ import type { StorageAdapter } from "./catalog-types.ts";
 export type CustomerStatus = "active" | "inactive";
 export type FulfillmentType = "pickup" | "delivery" | "dine_in";
 export type PaymentMethod = "pix" | "cash" | "credit_card" | "debit_card";
-export type PaymentStatus = "pending" | "paid" | "refunded";
+export type PaymentStatus = "pending" | "paid" | "partial" | "refunded";
 export type OrderStatus = "new" | "confirmed" | "preparing" | "ready" | "out_for_delivery" | "completed" | "cancelled";
 
 export interface Address { street: string; number: string; complement?: string; district: string; city: string; postalCode: string; }
