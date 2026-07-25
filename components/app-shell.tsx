@@ -4,12 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  BarChart3, Boxes, ChevronDown, CircleDollarSign, Gift, Import,
+  BarChart3, Boxes, CircleDollarSign, Gift, Import,
   LayoutDashboard, Menu, ReceiptText, Search, Settings,
   ShoppingBag, Users, X, Bell, Plus,
 } from "lucide-react";
 import { SessionAction } from "@/components/session-action";
+import { CompanySwitcher } from "@/components/company-switcher";
 import { roleLabel, type Identity } from "@/lib/supabase/identity";
+import type { CompanyMembership } from "@/lib/supabase/session";
 
 const initials = (name: string) => name.split(" ").filter(Boolean).map((word) => word[0]).slice(0, 2).join("").toUpperCase();
 
@@ -26,7 +28,7 @@ const navigation = [
   { label: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
-export function AppShell({ children, identity }: { children: React.ReactNode; identity: Identity }) {
+export function AppShell({ children, identity, memberships, selectedCompanyId }: { children: React.ReactNode; identity: Identity; memberships: CompanyMembership[]; selectedCompanyId: string | null }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -43,11 +45,7 @@ export function AppShell({ children, identity }: { children: React.ReactNode; id
           </Link>
           <button className="icon-button sidebar-close" onClick={() => setOpen(false)} aria-label="Fechar menu"><X size={20} /></button>
         </div>
-        <div className="business-card">
-          <span className="business-avatar">{initials(identity.companyName)}</span>
-          <span><small>Operando como</small><strong>{identity.companyName}</strong></span>
-          <ChevronDown size={16} />
-        </div>
+        <CompanySwitcher companyName={identity.companyName} memberships={memberships} selectedCompanyId={selectedCompanyId} />
         <nav aria-label="Menu principal">
           <p className="nav-label">OPERAÇÃO</p>
           {navigation.slice(0, 7).map((item) => <NavItem key={item.href} item={item} active={pathname === item.href} close={() => setOpen(false)} />)}

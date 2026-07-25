@@ -26,7 +26,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="pt-BR">
       <body suppressHydrationWarning>
         <PwaRegister />
-        <AppShell identity={identity}>{children}</AppShell>
+        <AppShell identity={identity} memberships={session.memberships} selectedCompanyId={selectedCompanyId}>{children}</AppShell>
       </body>
     </html>
   );
