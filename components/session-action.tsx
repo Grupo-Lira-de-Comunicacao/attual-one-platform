@@ -2,4 +2,4 @@
 import { LogOut } from "lucide-react";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-export function SessionAction(){if(getSupabasePublicConfig().mode!=="supabase")return null;const logout=async()=>{await createSupabaseBrowserClient().auth.signOut();window.location.assign("/login")};return <button className="icon-button" aria-label="Sair" onClick={logout}><LogOut size={16}/></button>}
+export function SessionAction(){if(getSupabasePublicConfig().mode!=="supabase")return null;const logout=async()=>{await createSupabaseBrowserClient().auth.signOut();await fetch("/api/auth/logout",{method:"POST"});window.location.assign("/login")};return <button className="icon-button" aria-label="Sair" onClick={logout}><LogOut size={16}/></button>}

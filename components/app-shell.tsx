@@ -9,6 +9,9 @@ import {
   ShoppingBag, Users, X, Bell, Plus,
 } from "lucide-react";
 import { SessionAction } from "@/components/session-action";
+import { roleLabel, type Identity } from "@/lib/supabase/identity";
+
+const initials = (name: string) => name.split(" ").filter(Boolean).map((word) => word[0]).slice(0, 2).join("").toUpperCase();
 
 const navigation = [
   { label: "Visão geral", href: "/", icon: LayoutDashboard },
@@ -23,7 +26,7 @@ const navigation = [
   { label: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, identity }: { children: React.ReactNode; identity: Identity }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -41,8 +44,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button className="icon-button sidebar-close" onClick={() => setOpen(false)} aria-label="Fechar menu"><X size={20} /></button>
         </div>
         <div className="business-card">
-          <span className="business-avatar">H7</span>
-          <span><small>Operando como</small><strong>Hamburgueria 07</strong></span>
+          <span className="business-avatar">{initials(identity.companyName)}</span>
+          <span><small>Operando como</small><strong>{identity.companyName}</strong></span>
           <ChevronDown size={16} />
         </div>
         <nav aria-label="Menu principal">
@@ -56,8 +59,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span><strong>Precisa de ajuda?</strong><small>Acesse a central de suporte</small></span>
         </div>
         <div className="user-card">
-          <span className="user-avatar">ML</span>
-          <span><strong>Mariana Lima</strong><small>Proprietária</small></span>
+          <span className="user-avatar">{initials(identity.userName)}</span>
+          <span><strong>{identity.userName}</strong><small>{roleLabel(identity.role)}</small></span>
           <SessionAction />
         </div>
       </aside>
