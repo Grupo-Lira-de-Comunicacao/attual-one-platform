@@ -32,7 +32,7 @@ export function AppShell({ children, identity, memberships, selectedCompanyId }:
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  if (["/loja", "/login", "/recuperar-senha", "/nova-senha", "/sem-empresa", "/selecionar-empresa"].some((prefix) => pathname.startsWith(prefix))) return <>{children}</>;
+  if (["/loja", "/login", "/recuperar-senha", "/nova-senha", "/sem-empresa", "/selecionar-empresa", "/mestre"].some((prefix) => pathname.startsWith(prefix))) return <>{children}</>;
 
   return (
     <div className="app-shell">
