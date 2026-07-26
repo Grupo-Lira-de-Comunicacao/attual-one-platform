@@ -7,6 +7,7 @@ import { listCompaniesForPlatformAdmin, findUserByEmailForPlatformAdmin, createC
 export function PlatformAdminPanel() {
   const supabase = useRef(createSupabaseBrowserClient()).current;
   const [companies, setCompanies] = useState<PlatformCompanySummary[] | null>(null);
+  const [companiesError, setCompaniesError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: "", slug: "", ownerEmail: "" });
@@ -17,8 +18,12 @@ export function PlatformAdminPanel() {
 
   const reload = () => {
     listCompaniesForPlatformAdmin(supabase)
-      .then(setCompanies)
-      .catch((error) => inform("error", error instanceof Error ? error.message : "Não foi possível carregar as empresas."));
+      .then((result) => { setCompanies(result); setCompaniesError(null); })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : "Não foi possível carregar as empresas.";
+        setCompaniesError(message);
+        inform("error", message);
+      });
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reload, []);
@@ -75,7 +80,13 @@ export function PlatformAdminPanel() {
 
       <section className="mestre-panel">
         <h2>Empresas</h2>
-        {companies === null && <p>Carregando...</p>}
+        {companies === null && !companiesError && <p>Carregando...</p>}
+        {companiesError && (
+          <div className="mestre-load-error" role="alert">
+            <p>{companiesError}</p>
+            <button className="outline-button" onClick={reload}>Tentar novamente</button>
+          </div>
+        )}
         {companies?.length === 0 && <p>Nenhuma empresa cadastrada.</p>}
         <div className="mestre-company-list">
           {companies?.map((company) => (
