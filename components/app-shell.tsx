@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   BarChart3, Boxes, CircleDollarSign, Gift, Import,
   LayoutDashboard, Menu, ReceiptText, Search, Settings,
@@ -12,14 +12,18 @@ import { SessionAction } from "@/components/session-action";
 import { CompanySwitcher } from "@/components/company-switcher";
 import { roleLabel, type Identity } from "@/lib/supabase/identity";
 import type { CompanyMembership } from "@/lib/supabase/session";
+import { createRepositories } from "@/lib/repositories/factory";
+import { getSupabasePublicConfig } from "@/lib/supabase/config";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { selectSidebarBadges, type SidebarCounts } from "@/lib/sidebar-counters";
 
 const initials = (name: string) => name.split(" ").filter(Boolean).map((word) => word[0]).slice(0, 2).join("").toUpperCase();
 
-const navigation = [
+const NAVIGATION = [
   { label: "Visão geral", href: "/", icon: LayoutDashboard },
-  { label: "Pedidos", href: "/pedidos", icon: ReceiptText, badge: "8" },
+  { label: "Pedidos", href: "/pedidos", icon: ReceiptText },
   { label: "Produtos", href: "/produtos", icon: ShoppingBag },
-  { label: "Estoque", href: "/estoque", icon: Boxes, badge: "3" },
+  { label: "Estoque", href: "/estoque", icon: Boxes },
   { label: "Clientes", href: "/clientes", icon: Users },
   { label: "Cupons e fidelidade", href: "/cupons-e-fidelidade", icon: Gift },
   { label: "Pagamentos", href: "/pagamentos", icon: CircleDollarSign },
@@ -28,11 +32,35 @@ const navigation = [
   { label: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
+// Busca real de "pedidos em aberto" e "produtos com estoque baixo" da empresa selecionada,
+// via o mesmo repositório usado pelo dashboard (RLS/RPC já escopam tudo por company_id).
+// period "all" propositalmente: pedido aberto de ontem ainda deve contar hoje.
+function useSidebarCounters(companyId: string | null, enabled: boolean): SidebarCounts | null {
+  const [counts, setCounts] = useState<SidebarCounts | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const mode = getSupabasePublicConfig().mode;
+    const repo = mode === "supabase" && companyId
+      ? createRepositories({ storage: window.localStorage, supabase: createSupabaseBrowserClient(), companyId })
+      : createRepositories({ storage: window.localStorage });
+    repo.analytics.getSnapshot("all")
+      .then((snapshot) => { if (!cancelled) setCounts({ openOrders: snapshot.openOrders, lowStock: snapshot.lowStock }); })
+      .catch(() => { /* mantém counts nulo: sem badge em vez de número errado */ });
+    return () => { cancelled = true; };
+  }, [companyId, enabled]);
+  return counts;
+}
+
 export function AppShell({ children, identity, memberships, selectedCompanyId }: { children: React.ReactNode; identity: Identity; memberships: CompanyMembership[]; selectedCompanyId: string | null }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const isChromeless = ["/loja", "/login", "/recuperar-senha", "/nova-senha", "/sem-empresa", "/selecionar-empresa", "/mestre"].some((prefix) => pathname.startsWith(prefix));
+  const counts = useSidebarCounters(selectedCompanyId, !isChromeless);
 
-  if (["/loja", "/login", "/recuperar-senha", "/nova-senha", "/sem-empresa", "/selecionar-empresa", "/mestre"].some((prefix) => pathname.startsWith(prefix))) return <>{children}</>;
+  if (isChromeless) return <>{children}</>;
+
+  const badges = selectSidebarBadges(counts);
 
   return (
     <div className="app-shell">
@@ -48,9 +76,9 @@ export function AppShell({ children, identity, memberships, selectedCompanyId }:
         <CompanySwitcher companyName={identity.companyName} memberships={memberships} selectedCompanyId={selectedCompanyId} />
         <nav aria-label="Menu principal">
           <p className="nav-label">OPERAÇÃO</p>
-          {navigation.slice(0, 7).map((item) => <NavItem key={item.href} item={item} active={pathname === item.href} close={() => setOpen(false)} />)}
+          {NAVIGATION.slice(0, 7).map((item) => <NavItem key={item.href} item={item} badge={badges[item.href]} active={pathname === item.href} close={() => setOpen(false)} />)}
           <p className="nav-label nav-label-spaced">GESTÃO</p>
-          {navigation.slice(7).map((item) => <NavItem key={item.href} item={item} active={pathname === item.href} close={() => setOpen(false)} />)}
+          {NAVIGATION.slice(7).map((item) => <NavItem key={item.href} item={item} badge={badges[item.href]} active={pathname === item.href} close={() => setOpen(false)} />)}
         </nav>
         <div className="sidebar-help">
           <span className="help-icon">?</span>
@@ -81,7 +109,7 @@ export function AppShell({ children, identity, memberships, selectedCompanyId }:
   );
 }
 
-function NavItem({ item, active, close }: { item: (typeof navigation)[number]; active: boolean; close: () => void }) {
+function NavItem({ item, active, close, badge }: { item: (typeof NAVIGATION)[number]; active: boolean; close: () => void; badge?: number }) {
   const Icon = item.icon;
-  return <Link href={item.href} onClick={close} className={`nav-item ${active ? "active" : ""}`}><Icon size={19} /><span>{item.label}</span>{item.badge && <em>{item.badge}</em>}</Link>;
+  return <Link href={item.href} onClick={close} className={`nav-item ${active ? "active" : ""}`}><Icon size={19} /><span>{item.label}</span>{badge !== undefined && <em>{badge}</em>}</Link>;
 }
