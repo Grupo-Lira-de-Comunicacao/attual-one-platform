@@ -28,5 +28,8 @@ create index if not exists casting_integration_events_status_idx
 
 alter table public.casting_integration_events enable row level security;
 
+revoke all privileges on table public.casting_integration_events from anon, authenticated;
+grant select, insert, update, delete on table public.casting_integration_events to service_role;
+
 comment on table public.casting_integration_events is
   'Inbox idempotente de eventos recebidos do Casting Attual 360. Escrita restrita ao backend via service role.';
