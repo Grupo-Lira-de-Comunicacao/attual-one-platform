@@ -29,6 +29,11 @@ test("/login, /recuperar-senha, /nova-senha e /auth/callback permanecem pública
   }
 });
 
+test("receptor Casting permanece público no proxy e protegido pelo Bearer secret da rota", () => {
+  const decision = resolveAccessDecision({ pathname: "/api/integrations/casting/events", user: null, memberships: null, selectedCompanyId: null, isPlatformAdmin: false });
+  assert.deepEqual(decision, { action: "allow" });
+});
+
 test("usuário autenticado com empresa selecionada e vínculo ativo acessa normalmente", () => {
   const decision = resolveAccessDecision({ pathname: "/pedidos", user: authenticated, memberships: ownMembership, selectedCompanyId: "company-1", isPlatformAdmin: false });
   assert.deepEqual(decision, { action: "allow" });
