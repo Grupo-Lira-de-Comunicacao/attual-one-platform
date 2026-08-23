@@ -27,7 +27,9 @@ npm run build
 - Receptor de integração do Casting Attual 360 em `POST /api/integrations/casting/events`
 - Persistência idempotente dos eventos de integração preparada por migration
 
-O deployment canônico deve usar o repositório `Grupo-Lira-de-Comunicacao/attual-one-platform`.
+## Deployment canônico
+
+O deployment canônico deve usar exclusivamente o repositório `Grupo-Lira-de-Comunicacao/attual-one-platform`.
 
 ## Integração Casting Attual 360
 
