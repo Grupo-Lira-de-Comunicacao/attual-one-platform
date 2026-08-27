@@ -6,6 +6,7 @@ import {
   payloadHash,
   resolveCastingState,
   stateForEvent,
+  type CastingEventType,
   type CastingState,
   verifyCastingSignature,
 } from "@/lib/integrations/casting";
@@ -16,7 +17,7 @@ export const dynamic = "force-dynamic";
 type CastingEvent = {
   event_id: string;
   event_key: string;
-  event_type: string;
+  event_type: CastingEventType;
   event_version: number;
   source_system: string;
   target_system: string;
