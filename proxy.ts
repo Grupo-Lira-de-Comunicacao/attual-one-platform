@@ -3,5 +3,72 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { PUBLIC, MEMBERSHIP_ROUTES, PLATFORM_ADMIN_ROUTES, resolveAccessDecision } from "@/lib/access-control";
 
-export async function proxy(request: NextRequest) { const config = getSupabasePublicConfig(); if (config.mode === "local") return NextResponse.next(); if (!config.configured) return NextResponse.redirect(new URL("/login?erro=configuracao", request.url)); let response = NextResponse.next({ request }); const supabase = createServerClient(config.url, config.publishableKey, { cookies: { getAll: () => request.cookies.getAll(), setAll: (values) => { values.forEach(({ name, value }) => request.cookies.set(name, value)); response = NextResponse.next({ request }); values.forEach(({ name, value, options }) => response.cookies.set(name, value, options)); } } }); const { data: { user } } = await supabase.auth.getUser(); const pathname = request.nextUrl.pathname; const isPublic = PUBLIC.some((prefix) => pathname.startsWith(prefix)); const isPlatformAdminRoute = PLATFORM_ADMIN_ROUTES.some((prefix) => pathname.startsWith(prefix)); let memberships: Array<{ company_id: string }> | null = null; let isPlatformAdmin = false; if (user && isPlatformAdminRoute) { const { data } = await supabase.from("platform_admins").select("id").eq("id", user.id).maybeSingle(); isPlatformAdmin = Boolean(data); } else if (user && !isPublic && !MEMBERSHIP_ROUTES.some((prefix) => pathname.startsWith(prefix))) { const { data } = await supabase.from("company_users").select("company_id").eq("user_id", user.id).eq("status", "active"); memberships = data ?? []; } const decision = resolveAccessDecision({ pathname, user, memberships, selectedCompanyId: request.cookies.get("attual_company_id")?.value ?? null, isPlatformAdmin }); if (decision.action === "redirect") return NextResponse.redirect(new URL(decision.to, request.url)); return response; }
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js).*)"] };
+const STORE_HOST = "loja.attualone.com.br";
+
+export async function proxy(request: NextRequest) {
+  const hostname = request.headers.get("host")?.split(":")[0]?.toLowerCase() ?? "";
+  const pathname = request.nextUrl.pathname;
+
+  if (hostname === STORE_HOST) {
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/hamburgueria-07", request.url));
+    }
+    if (!pathname.startsWith("/api/") && !pathname.startsWith("/loja/")) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/loja${pathname}`;
+      return NextResponse.rewrite(url);
+    }
+  }
+
+  const config = getSupabasePublicConfig();
+  if (config.mode === "local") return NextResponse.next();
+  if (!config.configured) return NextResponse.redirect(new URL("/login?erro=configuracao", request.url));
+
+  let response = NextResponse.next({ request });
+  const supabase = createServerClient(config.url, config.publishableKey, {
+    cookies: {
+      getAll: () => request.cookies.getAll(),
+      setAll: (values) => {
+        values.forEach(({ name, value }) => request.cookies.set(name, value));
+        response = NextResponse.next({ request });
+        values.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+      },
+    },
+  });
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const isPublic = PUBLIC.some((prefix) => pathname.startsWith(prefix));
+  const isPlatformAdminRoute = PLATFORM_ADMIN_ROUTES.some((prefix) => pathname.startsWith(prefix));
+  let memberships: Array<{ company_id: string }> | null = null;
+  let isPlatformAdmin = false;
+
+  if (user && isPlatformAdminRoute) {
+    const { data } = await supabase.from("platform_admins").select("id").eq("id", user.id).maybeSingle();
+    isPlatformAdmin = Boolean(data);
+  } else if (user && !isPublic && !MEMBERSHIP_ROUTES.some((prefix) => pathname.startsWith(prefix))) {
+    const { data } = await supabase
+      .from("company_users")
+      .select("company_id")
+      .eq("user_id", user.id)
+      .eq("status", "active");
+    memberships = data ?? [];
+  }
+
+  const decision = resolveAccessDecision({
+    pathname,
+    user,
+    memberships,
+    selectedCompanyId: request.cookies.get("attual_company_id")?.value ?? null,
+    isPlatformAdmin,
+  });
+
+  if (decision.action === "redirect") return NextResponse.redirect(new URL(decision.to, request.url));
+  return response;
+}
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js).*)"],
+};

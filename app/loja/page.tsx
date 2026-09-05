@@ -1,3 +1,5 @@
-import type{Metadata}from"next";import{Storefront}from"@/components/storefront";
-export const metadata:Metadata={title:"Hamburgueria 07",description:"Peça seu smash artesanal online."};
-export default function StorePage(){return <Storefront/>}
+import { redirect } from "next/navigation";
+
+export default function StoreIndexPage() {
+  redirect("/loja/hamburgueria-07");
+}

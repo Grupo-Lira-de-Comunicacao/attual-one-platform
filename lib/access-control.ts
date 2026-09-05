@@ -1,4 +1,13 @@
-export const PUBLIC = ["/loja", "/login", "/recuperar-senha", "/nova-senha", "/auth", "/api/auth/logout", "/api/integrations/casting/events"];
+export const PUBLIC = [
+  "/loja",
+  "/login",
+  "/recuperar-senha",
+  "/nova-senha",
+  "/auth",
+  "/api/auth/logout",
+  "/api/integrations/casting/events",
+  "/api/storefront",
+];
 export const MEMBERSHIP_ROUTES = ["/sem-empresa", "/selecionar-empresa", "/api/company"];
 export const PLATFORM_ADMIN_ROUTES = ["/mestre"];
 
