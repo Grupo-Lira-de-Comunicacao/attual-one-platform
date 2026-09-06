@@ -22,6 +22,17 @@ export async function findUserByEmailForPlatformAdmin(supabase: SupabaseClient, 
   return row ? { userId: row.user_id, fullName: row.full_name } : null;
 }
 
+export async function inviteOwnerForPlatformAdmin(email: string): Promise<PlatformUserLookup> {
+  const response = await fetch("/api/platform/invite-owner", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const payload = await response.json() as { userId?: string; error?: string };
+  if (!response.ok || !payload.userId) throw new Error(payload.error || "Não foi possível convidar o proprietário.");
+  return { userId: payload.userId, fullName: null };
+}
+
 export async function createCompanyForPlatformAdmin(supabase: SupabaseClient, input: { name: string; slug: string; ownerUserId: string }): Promise<{ error?: string }> {
   const { error } = await supabase.rpc("platform_create_company", { p_name: input.name, p_slug: input.slug, p_owner_user_id: input.ownerUserId });
   if (error) return { error: error.message };

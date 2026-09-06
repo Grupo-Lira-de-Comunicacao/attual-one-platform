@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Building2, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { listCompaniesForPlatformAdmin, findUserByEmailForPlatformAdmin, createCompanyForPlatformAdmin, linkOwnerForPlatformAdmin, type PlatformCompanySummary } from "@/lib/supabase/platform-admin";
+import { listCompaniesForPlatformAdmin, findUserByEmailForPlatformAdmin, inviteOwnerForPlatformAdmin, createCompanyForPlatformAdmin, linkOwnerForPlatformAdmin, type PlatformCompanySummary } from "@/lib/supabase/platform-admin";
 
 export function PlatformAdminPanel() {
   const supabase = useRef(createSupabaseBrowserClient()).current;
@@ -14,7 +14,7 @@ export function PlatformAdminPanel() {
   const [linking, setLinking] = useState<{ companyId: string; email: string } | null>(null);
   const [linkSubmitting, setLinkSubmitting] = useState(false);
 
-  const inform = (type: "success" | "error", text: string) => { setNotice({ type, text }); window.setTimeout(() => setNotice(null), 4000); };
+  const inform = (type: "success" | "error", text: string) => { setNotice({ type, text }); window.setTimeout(() => setNotice(null), 5000); };
 
   const reload = () => {
     listCompaniesForPlatformAdmin(supabase)
@@ -28,15 +28,22 @@ export function PlatformAdminPanel() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(reload, []);
 
+  const resolveOwner = async (email: string) => {
+    const normalized = email.trim().toLowerCase();
+    const existing = await findUserByEmailForPlatformAdmin(supabase, normalized);
+    if (existing) return { owner: existing, invited: false };
+    const invited = await inviteOwnerForPlatformAdmin(normalized);
+    return { owner: invited, invited: true };
+  };
+
   const submitCreate = async () => {
     setCreating(true);
     try {
-      const owner = await findUserByEmailForPlatformAdmin(supabase, form.ownerEmail.trim());
-      if (!owner) throw new Error("Nenhum usuário encontrado com esse e-mail. Convite para novos usuários ainda não está disponível nesta fase.");
+      const { owner, invited } = await resolveOwner(form.ownerEmail);
       const result = await createCompanyForPlatformAdmin(supabase, { name: form.name.trim(), slug: form.slug.trim(), ownerUserId: owner.userId });
       if (result.error) throw new Error(result.error);
       setForm({ name: "", slug: "", ownerEmail: "" });
-      inform("success", "Empresa criada com sucesso.");
+      inform("success", invited ? "Empresa criada e convite enviado ao proprietário." : "Empresa criada com sucesso.");
       reload();
     } catch (error) {
       inform("error", error instanceof Error ? error.message : "Falha ao criar empresa.");
@@ -49,12 +56,11 @@ export function PlatformAdminPanel() {
     if (!linking || linking.companyId !== companyId) return;
     setLinkSubmitting(true);
     try {
-      const owner = await findUserByEmailForPlatformAdmin(supabase, linking.email.trim());
-      if (!owner) throw new Error("Nenhum usuário encontrado com esse e-mail.");
+      const { owner, invited } = await resolveOwner(linking.email);
       const result = await linkOwnerForPlatformAdmin(supabase, { companyId, userId: owner.userId });
       if (result.error) throw new Error(result.error);
       setLinking(null);
-      inform("success", "Proprietário vinculado com sucesso.");
+      inform("success", invited ? "Proprietário convidado e vinculado com sucesso." : "Proprietário vinculado com sucesso.");
       reload();
     } catch (error) {
       inform("error", error instanceof Error ? error.message : "Falha ao vincular proprietário.");
@@ -69,10 +75,10 @@ export function PlatformAdminPanel() {
 
       <section className="mestre-panel">
         <h2>Cadastrar empresa</h2>
-        <p>O proprietário precisa já ter uma conta criada — convite de novos usuários ainda não está disponível.</p>
+        <p>Informe o proprietário. Se ele ainda não tiver conta, o Attual One enviará um convite automaticamente.</p>
         <div className="mestre-form">
           <input placeholder="Nome da empresa" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-          <input placeholder="Slug (ex: minha-empresa)" value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} />
+          <input placeholder="Slug (ex: minha-empresa)" value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") }))} />
           <input placeholder="E-mail do proprietário" type="email" value={form.ownerEmail} onChange={(e) => setForm((f) => ({ ...f, ownerEmail: e.target.value }))} />
           <button className="primary-button" disabled={creating || !form.name.trim() || !form.slug.trim() || !form.ownerEmail.trim()} onClick={submitCreate}>{creating ? "Criando..." : "Cadastrar empresa"}</button>
         </div>

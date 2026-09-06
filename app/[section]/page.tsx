@@ -7,6 +7,7 @@ import { CommerceManager } from "@/components/commerce-manager";
 import { RewardsManager } from "@/components/rewards-manager";
 import { ReportsManager } from "@/components/reports-manager";
 import { LocalMigrationPanel } from "@/components/local-migration-panel";
+import { CompanySettings } from "@/components/company-settings";
 import { getSelectedCompanyId } from "@/lib/supabase/session";
 
 const sections: Record<string, { title: string; description: string }> = {
@@ -33,6 +34,7 @@ export default async function SectionPage({ params }: { params: Promise<{ sectio
   if (section === "pagamentos" || section === "cupons-e-fidelidade") { const companyId = await getSelectedCompanyId(); return <RewardsManager initialTab={section === "pagamentos" ? "payments" : "coupons"} companyId={companyId ?? undefined} />; }
   if (section === "relatorios") { const companyId = await getSelectedCompanyId(); return <ReportsManager companyId={companyId ?? undefined} />; }
   if (section === "importacao") return <LocalMigrationPanel />;
+  if (section === "configuracoes") { const companyId = await getSelectedCompanyId(); return <CompanySettings companyId={companyId ?? undefined} />; }
   const current = sections[section];
   if (!current) notFound();
   return <div className="page placeholder-page">

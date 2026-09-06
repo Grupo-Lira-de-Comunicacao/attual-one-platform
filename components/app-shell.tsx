@@ -32,9 +32,6 @@ const NAVIGATION = [
   { label: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
-// Busca real de "pedidos em aberto" e "produtos com estoque baixo" da empresa selecionada,
-// via o mesmo repositório usado pelo dashboard (RLS/RPC já escopam tudo por company_id).
-// period "all" propositalmente: pedido aberto de ontem ainda deve contar hoje.
 function useSidebarCounters(companyId: string | null, enabled: boolean): SidebarCounts | null {
   const [counts, setCounts] = useState<SidebarCounts | null>(null);
   useEffect(() => {
@@ -46,7 +43,7 @@ function useSidebarCounters(companyId: string | null, enabled: boolean): Sidebar
       : createRepositories({ storage: window.localStorage });
     repo.analytics.getSnapshot("all")
       .then((snapshot) => { if (!cancelled) setCounts({ openOrders: snapshot.openOrders, lowStock: snapshot.lowStock }); })
-      .catch(() => { /* mantém counts nulo: sem badge em vez de número errado */ });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [companyId, enabled]);
   return counts;
@@ -55,7 +52,7 @@ function useSidebarCounters(companyId: string | null, enabled: boolean): Sidebar
 export function AppShell({ children, identity, memberships, selectedCompanyId }: { children: React.ReactNode; identity: Identity; memberships: CompanyMembership[]; selectedCompanyId: string | null }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const isChromeless = ["/loja", "/login", "/recuperar-senha", "/nova-senha", "/sem-empresa", "/selecionar-empresa", "/mestre"].some((prefix) => pathname.startsWith(prefix));
+  const isChromeless = ["/site", "/loja", "/login", "/recuperar-senha", "/nova-senha", "/sem-empresa", "/selecionar-empresa", "/mestre"].some((prefix) => pathname.startsWith(prefix));
   const counts = useSidebarCounters(selectedCompanyId, !isChromeless);
 
   if (isChromeless) return <>{children}</>;
