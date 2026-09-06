@@ -68,7 +68,8 @@ begin
       updated_at = now()
   where id = v_order_id;
 
-  return case when tg_op = 'DELETE' then old else new end;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
 end;
 $function$;
 
@@ -76,7 +77,7 @@ revoke all on function public.refresh_order_age_restriction() from public, anon,
 
 drop trigger if exists trg_refresh_order_age_restriction on public.order_items;
 create trigger trg_refresh_order_age_restriction
-after insert or update of product_id, order_id or delete
+after insert or delete or update of product_id, order_id
 on public.order_items
 for each row execute function public.refresh_order_age_restriction();
 
