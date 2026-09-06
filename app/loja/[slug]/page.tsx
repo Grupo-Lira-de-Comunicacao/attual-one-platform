@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { PadariaConquistaShell } from "@/components/padaria-conquista-shell";
 import { Storefront } from "@/components/storefront";
 
 export const metadata: Metadata = {
@@ -9,5 +10,6 @@ export const metadata: Metadata = {
 
 export default async function StorePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
+  if (slug === "padaria-conquista") return <PadariaConquistaShell />;
   return <Storefront slug={slug} />;
 }
