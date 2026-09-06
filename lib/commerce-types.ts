@@ -5,6 +5,7 @@ export type FulfillmentType = "pickup" | "delivery" | "dine_in";
 export type PaymentMethod = "pix" | "cash" | "credit_card" | "debit_card";
 export type PaymentStatus = "pending" | "paid" | "partial" | "refunded";
 export type OrderStatus = "new" | "confirmed" | "preparing" | "ready" | "out_for_delivery" | "completed" | "cancelled";
+export type AgeHandoffStatus = "not_required" | "document_required" | "verified";
 
 export interface Address { street: string; number: string; complement?: string; district: string; city: string; postalCode: string; }
 export interface Customer {
@@ -20,6 +21,7 @@ export interface Order {
   createdAt: string; updatedAt: string; items: OrderItem[]; fulfillment: FulfillmentType; deliveryAddress?: Address;
   subtotal: number; discount: number; deliveryFee: number; total: number; paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus; status: OrderStatus; stockApplied: boolean; cancellationReason?: string;
+  containsAgeRestrictedProduct?: boolean; ageHandoffStatus?: AgeHandoffStatus; ageHandoffVerifiedAt?: string;
 }
 export interface CommerceState { version: 1; companyId: string; nextOrderNumber: number; customers: Customer[]; orders: Order[]; }
 export type CustomerInput = Omit<Customer, "id" | "companyId" | "createdAt" | "updatedAt">;
