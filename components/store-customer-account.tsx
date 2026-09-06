@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ChevronRight, LogOut, Mail, MapPin, RotateCcw, ShoppingBag, UserRound, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronRight, Gift, LogOut, Mail, MapPin, RotateCcw, ShoppingBag, Sparkles, TicketPercent, UserRound, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import {
   loadStoredCustomerOrders,
@@ -16,12 +16,38 @@ const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL
 const emptyProfile: StoreCustomerProfile = { name:"", phone:"", address:{ street:"", number:"", complement:"", district:"", city:"", postalCode:"" } };
 
 type CloudOrder = StoredCustomerOrder & { paymentStatus?: string };
+type LoyaltyRule = {
+  name:string;
+  mode:string;
+  pointsPerReal:number;
+  rewardThreshold:number;
+  rewardDescription:string;
+  rewardValue:number;
+  rewardMinimumOrder:number;
+  rewardValidDays:number;
+};
+type LoyaltyState = { points:number; purchaseCount:number; rewardsAvailable:number; rule:LoyaltyRule|null };
+type CustomerCoupon = {
+  id:string;
+  source:string;
+  redeemedAt:string|null;
+  code:string;
+  description:string;
+  type:string;
+  value:number;
+  minimumOrder:number;
+  startsAt:string;
+  expiresAt:string;
+  status:string;
+  used:boolean;
+};
 type CloudAccount = {
   authenticated: true;
   email: string;
   profile: StoreCustomerProfile;
   orders: CloudOrder[];
-  loyalty: { points:number; purchaseCount:number; rewardsAvailable:number } | null;
+  loyalty: LoyaltyState | null;
+  coupons: CustomerCoupon[];
 };
 
 export function StoreCustomerAccount({ slug }: { slug: string }) {
@@ -111,6 +137,27 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
     } finally { setBusy(false); }
   }
 
+  async function redeemReward() {
+    if (!cloud?.loyalty?.rewardsAvailable) return;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch(`/api/storefront/${encodeURIComponent(slug)}/account`, { method:"POST" });
+      const body = await response.json() as CloudAccount | { error?:string };
+      if (!response.ok || !("authenticated" in body)) throw new Error("error" in body ? body.error : "Não foi possível resgatar o prêmio.");
+      setCloud(body as CloudAccount);
+      setMessage("Prêmio resgatado. Seu cupom exclusivo já está disponível abaixo.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível resgatar o prêmio.");
+    } finally { setBusy(false); }
+  }
+
+  function useCoupon(code: string) {
+    if (!code) return;
+    window.dispatchEvent(new CustomEvent("attual-one:use-coupon", { detail: code }));
+    setMessage(`Cupom ${code} selecionado. Ele será preenchido no checkout.`);
+    setOpen(false);
+  }
+
   async function signOut() {
     setBusy(true); setMessage("");
     try {
@@ -130,16 +177,22 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
   const address = profile.address;
   const setAddress = (key: keyof StoreCustomerProfile["address"], value: string) => setProfile((current) => ({ ...current, address:{ ...current.address, [key]:value } }));
   const visibleOrders = cloud?.orders?.length ? cloud.orders : orders;
+  const loyalty = cloud?.loyalty ?? null;
+  const threshold = loyalty?.rule?.rewardThreshold ?? 0;
+  const cycleProgress = threshold > 0 ? loyalty!.purchaseCount % threshold : 0;
+  const progressPercent = threshold > 0 ? Math.min(100, (cycleProgress / threshold) * 100) : 0;
+  const remaining = threshold > 0 ? threshold - cycleProgress : 0;
+  const activeCoupons = useMemo(() => (cloud?.coupons ?? []).filter((coupon) => !coupon.used && coupon.status === "active" && (!coupon.expiresAt || new Date(coupon.expiresAt).getTime() > Date.now())), [cloud]);
 
   return <>
-    <button type="button" onClick={()=>{refreshLocal();void refreshCloud();setOpen(true);}} className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-xl" aria-label="Abrir meus pedidos"><UserRound size={17}/> Meus pedidos</button>
+    <button type="button" onClick={()=>{refreshLocal();void refreshCloud();setOpen(true);}} className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-xl" aria-label="Abrir minha conta"><UserRound size={17}/> Minha conta</button>
     {open && <div className="store-overlay">
       <aside className="cart-drawer" role="dialog" aria-modal="true" aria-label="Minha conta">
-        <header><div><p className="eyebrow">MINHA CONTA</p><h2>Perfil e pedidos</h2></div><button onClick={()=>setOpen(false)} aria-label="Fechar"><X /></button></header>
+        <header><div><p className="eyebrow">MINHA CONTA</p><h2>Perfil, fidelidade e pedidos</h2></div><button onClick={()=>setOpen(false)} aria-label="Fechar"><X /></button></header>
         <div className="cart-items">
           {!cloud && <section className="py-5">
-            <div className="mb-3 flex items-center gap-2"><Mail size={18}/><strong>Leve seus pedidos para qualquer aparelho</strong></div>
-            <p className="mb-3 text-sm text-slate-500">Entre por link seguro no e-mail. Não precisa criar senha.</p>
+            <div className="mb-3 flex items-center gap-2"><Mail size={18}/><strong>Entre no Clube Conquista</strong></div>
+            <p className="mb-3 text-sm text-slate-500">Use seu e-mail para levar histórico, endereço, cupons e fidelidade para qualquer aparelho. Não precisa criar senha.</p>
             <div className="grid gap-2">
               <input type="email" className="rounded-lg border border-slate-200 px-3 py-2" placeholder="seuemail@exemplo.com" value={email} onChange={(e)=>setEmail(e.target.value)} autoComplete="email"/>
               <button className="store-primary" disabled={busy} onClick={()=>void sendMagicLink()}>{busy?"Enviando...":"Enviar link de acesso"}</button>
@@ -147,8 +200,24 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
           </section>}
 
           {cloud && <section className="border-b border-slate-100 py-4">
-            <div className="flex items-center justify-between gap-3"><div><small className="block text-slate-500">Conta conectada</small><strong>{cloud.email}</strong></div><button className="outline-button" disabled={busy} onClick={()=>void signOut()}><LogOut size={15}/> Sair</button></div>
-            {cloud.loyalty && <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-slate-50 p-2"><strong className="block">{cloud.loyalty.points}</strong><small>Pontos</small></div><div className="rounded-lg bg-slate-50 p-2"><strong className="block">{cloud.loyalty.purchaseCount}</strong><small>Compras</small></div><div className="rounded-lg bg-slate-50 p-2"><strong className="block">{cloud.loyalty.rewardsAvailable}</strong><small>Prêmios</small></div></div>}
+            <div className="flex items-center justify-between gap-3"><div><small className="block text-slate-500">Clube Conquista conectado</small><strong>{cloud.email}</strong></div><button className="outline-button" disabled={busy} onClick={()=>void signOut()}><LogOut size={15}/> Sair</button></div>
+          </section>}
+
+          {cloud && loyalty?.rule && <section className="border-b border-slate-100 py-5">
+            <div className="mb-3 flex items-center gap-2"><Sparkles size={18}/><strong>{loyalty.rule.name}</strong></div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-bold text-amber-950">A cada {threshold} compras pagas e concluídas</p>
+              <p className="mt-1 text-sm text-amber-900">Você ganha {loyalty.rule.rewardDescription}.</p>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-600" style={{width:`${progressPercent}%`}}/></div>
+              <div className="mt-2 flex items-center justify-between gap-3 text-xs text-amber-900"><span>{cycleProgress} de {threshold} compras neste ciclo</span><strong>{loyalty.rewardsAvailable > 0 ? `${loyalty.rewardsAvailable} prêmio(s) disponível(is)` : `${remaining} para o próximo prêmio`}</strong></div>
+              {loyalty.rewardsAvailable > 0 && <button className="store-primary mt-4 w-full" disabled={busy} onClick={()=>void redeemReward()}><Gift size={16}/>{busy?"Resgatando...":`Resgatar ${money.format(loyalty.rule.rewardValue)} de desconto`}</button>}
+              <small className="mt-3 block text-amber-800">Prêmio válido por {loyalty.rule.rewardValidDays} dias e em pedidos a partir de {money.format(loyalty.rule.rewardMinimumOrder)}.</small>
+            </div>
+          </section>}
+
+          {cloud && <section className="border-b border-slate-100 py-5">
+            <div className="mb-3 flex items-center gap-2"><TicketPercent size={18}/><strong>Meus cupons</strong></div>
+            {activeCoupons.length===0?<p className="text-sm text-slate-500">Nenhum cupom disponível agora. Complete seu cadastro e continue comprando para liberar benefícios.</p>:<div className="grid gap-3">{activeCoupons.map((coupon)=><article key={coupon.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><small className="font-bold uppercase text-slate-500">{coupon.source==="welcome"?"Boas-vindas":"Prêmio fidelidade"}</small><strong className="mt-1 block text-base">{coupon.description}</strong></div><Gift size={20}/></div><code className="mt-3 block rounded-lg bg-slate-950 px-3 py-2 text-center text-sm font-black tracking-wider text-white">{coupon.code}</code><div className="mt-2 text-xs text-slate-500">Pedido mínimo {money.format(coupon.minimumOrder)} · válido até {new Date(coupon.expiresAt).toLocaleDateString("pt-BR")}</div><button className="outline-button mt-3 w-full justify-center" onClick={()=>useCoupon(coupon.code)}>Usar no próximo pedido</button></article>)}</div>}
           </section>}
 
           <section className="py-5">

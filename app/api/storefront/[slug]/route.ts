@@ -138,6 +138,17 @@ function parseCheckout(value: unknown): PublicCheckoutInput | null {
   return body as PublicCheckoutInput;
 }
 
+async function authenticatedCustomer(client: ReturnType<typeof adminClient>, slug: string) {
+  const auth = await createSupabaseServerClient();
+  const { data: userData } = await auth.auth.getUser();
+  if (!userData.user) return null;
+  const { data: company } = await client.from("companies").select("id").eq("slug", slug).is("deleted_at", null).maybeSingle();
+  if (!company?.id) return null;
+  const { data: account } = await client.from("store_customer_accounts").select("customer_id").eq("company_id", company.id).eq("auth_user_id", userData.user.id).maybeSingle();
+  if (!account?.customer_id) return null;
+  return { companyId: String(company.id), customerId: String(account.customer_id) };
+}
+
 export async function GET(_request: NextRequest, context: { params: Promise<{ slug: string }> }) {
   const { slug } = await context.params;
   if (!slugPattern.test(slug)) return apiError("Loja inválida.", 400);
@@ -162,6 +173,36 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
 
   try {
     const client = adminClient();
+    const couponCode = payload.couponCode?.trim().toUpperCase() || "";
+    let customerContext = await authenticatedCustomer(client, slug);
+
+    if (couponCode) {
+      const { data: company } = await client.from("companies").select("id").eq("slug", slug).is("deleted_at", null).maybeSingle();
+      if (!company?.id) return apiError("Loja não encontrada.", 404);
+      const { data: coupon } = await client.from("coupons").select("id").eq("company_id", company.id).eq("code", couponCode).is("deleted_at", null).maybeSingle();
+      if (coupon?.id) {
+        const { count: privateCount, error: privateError } = await client
+          .from("store_customer_coupon_entitlements")
+          .select("id", { count:"exact", head:true })
+          .eq("company_id", company.id)
+          .eq("coupon_id", coupon.id);
+        if (privateError) throw privateError;
+        if ((privateCount ?? 0) > 0) {
+          if (!customerContext || customerContext.companyId !== String(company.id)) return apiError("Este cupom pertence a uma conta de cliente. Entre na sua conta para usá-lo.", 409);
+          const { data: entitlement, error: entitlementError } = await client
+            .from("store_customer_coupon_entitlements")
+            .select("id")
+            .eq("company_id", company.id)
+            .eq("customer_id", customerContext.customerId)
+            .eq("coupon_id", coupon.id)
+            .is("redeemed_at", null)
+            .maybeSingle();
+          if (entitlementError) throw entitlementError;
+          if (!entitlement) return apiError("Este cupom não está disponível para sua conta.", 409);
+        }
+      }
+    }
+
     const { data, error } = await client.rpc("public_store_checkout", {
       p_slug: slug,
       p_submission_id: payload.submissionId.trim(),
@@ -170,7 +211,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       p_fulfillment: payload.fulfillment,
       p_delivery_address: payload.fulfillment === "delivery" ? payload.address ?? {} : null,
       p_payment_method: payload.paymentMethod,
-      p_coupon_code: payload.couponCode?.trim().toUpperCase() || null,
+      p_coupon_code: couponCode || null,
       p_items: payload.items.map((item) => ({ product_id: item.productId, quantity: item.quantity, additions: item.additions ?? [], note: item.note?.trim() || null })),
     });
     if (error) {
@@ -181,22 +222,21 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     let order = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
     if (!order?.id) throw new Error("RPC não retornou pedido.");
 
-    try {
-      const auth = await createSupabaseServerClient();
-      const { data: userData } = await auth.auth.getUser();
-      if (userData.user) {
-        const { data: company } = await client.from("companies").select("id").eq("slug", slug).is("deleted_at", null).maybeSingle();
-        if (company?.id) {
-          const { data: account } = await client.from("store_customer_accounts").select("customer_id").eq("company_id", company.id).eq("auth_user_id", userData.user.id).maybeSingle();
-          if (account?.customer_id) {
-            const { data: linked, error: linkError } = await client.rpc("link_public_store_order_customer", { p_order: String(order.id), p_customer: String(account.customer_id) });
-            if (linkError) console.error("[public-storefront] vínculo de cliente não aplicado", linkError.code, linkError.message);
-            else if (linked) order = (Array.isArray(linked) ? linked[0] : linked) as Record<string, unknown>;
-          }
-        }
+    if (!customerContext) customerContext = await authenticatedCustomer(client, slug);
+    if (customerContext) {
+      const { data: linked, error: linkError } = await client.rpc("link_public_store_order_customer", { p_order: String(order.id), p_customer: customerContext.customerId });
+      if (linkError) console.error("[public-storefront] vínculo de cliente não aplicado", linkError.code, linkError.message);
+      else if (linked) order = (Array.isArray(linked) ? linked[0] : linked) as Record<string, unknown>;
+
+      if (couponCode) {
+        const { error: markError } = await client.rpc("mark_store_customer_coupon_redeemed", {
+          p_company: customerContext.companyId,
+          p_customer: customerContext.customerId,
+          p_code: couponCode,
+          p_order: String(order.id),
+        });
+        if (markError) console.error("[public-storefront] entitlement de cupom não marcado", markError.code, markError.message);
       }
-    } catch (linkFailure) {
-      console.error("[public-storefront] vínculo de conta ignorado", linkFailure instanceof Error ? linkFailure.message : "erro desconhecido");
     }
 
     let trackingToken: string | undefined;
