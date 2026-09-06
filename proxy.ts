@@ -24,10 +24,15 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  if (ROOT_HOSTS.has(hostname) && pathname !== "/" && !pathname.startsWith("/_next/") && pathname !== "/favicon.ico") {
-    // Keep the marketing root isolated from the authenticated app. Existing
-    // deep links are forwarded to the canonical app hostname.
-    return NextResponse.redirect(new URL(`https://${APP_HOST}${pathname}${request.nextUrl.search}`));
+  if (ROOT_HOSTS.has(hostname)) {
+    if (pathname === "/") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/site";
+      return NextResponse.rewrite(url);
+    }
+    if (!pathname.startsWith("/_next/") && pathname !== "/favicon.ico") {
+      return NextResponse.redirect(new URL(`https://${APP_HOST}${pathname}${request.nextUrl.search}`));
+    }
   }
 
   const config = getSupabasePublicConfig();
