@@ -1,6 +1,14 @@
 export type PublicFulfillmentType = "pickup" | "delivery" | "dine_in";
 export type PublicPaymentMethod = "pix" | "cash" | "credit_card" | "debit_card";
 
+export type PublicDeliveryZone = {
+  id: string;
+  name: string;
+  fee: number;
+  distanceBand?: string;
+  isDefault: boolean;
+};
+
 export type PublicStoreConfig = {
   companyId: string;
   slug: string;
@@ -47,6 +55,7 @@ export type PublicStorePayload = {
   config: PublicStoreConfig;
   categories: PublicStoreCategory[];
   products: PublicStoreProduct[];
+  deliveryZones?: PublicDeliveryZone[];
 };
 
 export type PublicCheckoutItem = {

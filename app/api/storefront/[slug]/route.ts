@@ -71,19 +71,13 @@ function safeCheckoutMessage(message: string) {
     ["PUBLIC_STORE_PRODUCT_UNAVAILABLE", "Um dos produtos ficou indisponível. Atualize o cardápio."],
     ["PUBLIC_STORE_STOCK", "A quantidade solicitada não está mais disponível."],
     ["PUBLIC_STORE_COUPON", "Cupom inválido ou indisponível."],
-    ["PUBLIC_STORE_ADDRESS", "Informe um endereço de entrega válido."],
+    ["PUBLIC_STORE_ADDRESS", "Informe rua, número e bairro para a entrega."],
   ];
   return known.find(([code]) => message.includes(code))?.[1] ?? "Não foi possível concluir o pedido.";
 }
 
 function localDateInfo(timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
   const weekday = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[value("weekday") as "Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"] ?? 0;
   return { weekday, date: `${value("year")}-${value("month")}-${value("day")}` };
@@ -114,18 +108,22 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
   if (companyError) throw new Error(companyError.message);
   if (!company) return null;
 
-  const [{ data: categories, error: categoriesError }, { data: products, error: productsError }] = await Promise.all([
+  const [categoriesResult, productsResult, zonesResult] = await Promise.all([
     client.from("categories").select("id,name,description,display_order").eq("company_id", company.id).eq("status", "active").is("deleted_at", null).order("display_order", { ascending: true }),
     client.from("products").select("id,category_id,name,description,price_cents,promotional_price_cents,image_url,sku,track_stock,current_stock,status").eq("company_id", company.id).eq("is_public", true).in("status", ["available", "out_of_stock"]).is("deleted_at", null).order("name", { ascending: true }),
+    client.from("delivery_zones").select("id,name,fee_cents,distance_band,is_default,display_order").eq("company_id", company.id).eq("active", true).order("display_order", { ascending: true }),
   ]);
 
-  const readError = categoriesError ?? productsError;
+  const readError = categoriesResult.error ?? productsResult.error ?? zonesResult.error;
   if (readError) throw new Error(readError.message);
 
+  const categories = categoriesResult.data ?? [];
+  const products = productsResult.data ?? [];
+  const zones = zonesResult.data ?? [];
   const profile = asRecord(company.public_profile);
   const description = text(profile, "description", "Loja online");
   const deliveryFeeCents = numberValue(profile, "delivery_fee_cents", 0);
-  const alcoholCategoryIds = new Set((categories ?? []).filter((row) => row.name.toLowerCase().includes("cerveja") || row.name.toLowerCase().includes("alco")).map((row) => row.id));
+  const alcoholCategoryIds = new Set(categories.filter((row) => row.name.toLowerCase().includes("cerveja") || row.name.toLowerCase().includes("alco")).map((row) => row.id));
 
   return {
     config: {
@@ -148,8 +146,8 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
       state: text(profile, "state", ""),
       alcoholMinAge: Math.max(0, numberValue(profile, "alcohol_min_age", 0)) || undefined,
     },
-    categories: (categories ?? []).map((row) => ({ id: row.id, name: row.name, description: row.description, displayOrder: row.display_order })),
-    products: (products ?? []).map((row) => ({
+    categories: categories.map((row) => ({ id: row.id, name: row.name, description: row.description, displayOrder: row.display_order })),
+    products: products.map((row) => ({
       id: row.id,
       categoryId: row.category_id,
       name: row.name,
@@ -161,6 +159,13 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
       currentStock: Number(row.current_stock),
       status: row.status,
       requiresAgeVerification: alcoholCategoryIds.has(row.category_id),
+    })),
+    deliveryZones: zones.map((row) => ({
+      id: row.id,
+      name: row.name,
+      fee: Number(row.fee_cents) / 100,
+      distanceBand: row.distance_band ?? undefined,
+      isDefault: Boolean(row.is_default),
     })),
   };
 }
@@ -176,7 +181,7 @@ function parseCheckout(value: unknown): PublicCheckoutInput | null {
   if (body.identified && (typeof body.name !== "string" || !body.name.trim() || typeof body.phone !== "string" || !body.phone.trim())) return null;
   if (body.fulfillment === "delivery") {
     const address = asRecord(body.address);
-    if (typeof address.street !== "string" || !address.street.trim() || typeof address.number !== "string" || !address.number.trim()) return null;
+    if (typeof address.street !== "string" || !address.street.trim() || typeof address.number !== "string" || !address.number.trim() || typeof address.district !== "string" || !address.district.trim()) return null;
   }
   for (const item of body.items) {
     if (!item || typeof item !== "object") return null;
