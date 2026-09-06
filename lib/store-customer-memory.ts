@@ -1,4 +1,4 @@
-import type { PublicCheckoutResult } from "@/lib/public-storefront-types";
+import type { PublicCheckoutResult, PublicItemConfiguration } from "@/lib/public-storefront-types";
 
 export type StoreCustomerAddress = {
   street: string;
@@ -22,6 +22,7 @@ export type StoredOrderItem = {
   quantity: number;
   additions: string[];
   note: string;
+  configuration?: PublicItemConfiguration;
 };
 
 export type StoredCustomerOrder = {
