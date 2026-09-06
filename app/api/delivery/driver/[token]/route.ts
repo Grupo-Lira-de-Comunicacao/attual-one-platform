@@ -35,11 +35,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
     const client = deliveryAdminClient();
     const { data: current, error: currentError } = await client
       .from("deliveries")
-      .select("id,order_id,status,orders(status)")
+      .select("id,order_id,status,orders(status,contains_age_restricted_product,age_handoff_status)")
       .eq("driver_access_token", token)
       .maybeSingle();
     if (currentError) throw currentError;
     if (!current) return NextResponse.json({ error: "Entrega não encontrada." }, { status: 404 });
+
+    const order = (Array.isArray(current.orders) ? current.orders[0] : current.orders) as { status?: string; contains_age_restricted_product?: boolean; age_handoff_status?: string } | null;
 
     if (body.location && typeof body.location === "object" && !Array.isArray(body.location)) {
       const location = body.location as Record<string, unknown>;
@@ -60,9 +62,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
       if (error) throw error;
     }
 
+    if (body.ageVerified === true) {
+      if (!order?.contains_age_restricted_product) return NextResponse.json({ error: "Este pedido não exige conferência de idade." }, { status: 409 });
+      if (["delivered", "cancelled"].includes(String(current.status))) return NextResponse.json({ error: "Esta entrega já foi encerrada." }, { status: 409 });
+      const now = new Date().toISOString();
+      const { error } = await client.from("orders").update({
+        age_handoff_status: "verified",
+        age_handoff_verified_at: now,
+        updated_at: now,
+      }).eq("id", current.order_id);
+      if (error) throw error;
+    }
+
     if (typeof body.status === "string") {
       if (!allowedStatuses.has(body.status)) return NextResponse.json({ error: "Status inválido." }, { status: 400 });
-      const order = (Array.isArray(current.orders) ? current.orders[0] : current.orders) as { status?: string } | null;
       const now = new Date().toISOString();
 
       if (body.status === "assigned") {
@@ -90,6 +103,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ t
 
       if (body.status === "delivered") {
         if (String(current.status) !== "out_for_delivery") return NextResponse.json({ error: "A entrega precisa estar em rota." }, { status: 409 });
+        if (order?.contains_age_restricted_product && order.age_handoff_status !== "verified") {
+          return NextResponse.json({ error: "Antes de concluir, confira um documento com foto de uma pessoa maior de 18 anos." }, { status: 409 });
+        }
         const { error: deliveryError } = await client.from("deliveries").update({ status: "delivered", delivered_at: now, updated_at: now }).eq("id", current.id);
         if (deliveryError) throw deliveryError;
         const { error: orderError } = await client.from("orders").update({ status: "completed", updated_at: now }).eq("id", current.order_id);
