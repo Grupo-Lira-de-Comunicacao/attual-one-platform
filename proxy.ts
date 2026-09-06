@@ -4,6 +4,8 @@ import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { PUBLIC, MEMBERSHIP_ROUTES, PLATFORM_ADMIN_ROUTES, resolveAccessDecision } from "@/lib/access-control";
 
 const STORE_HOST = "loja.attualone.com.br";
+const APP_HOST = "app.attualone.com.br";
+const ROOT_HOSTS = new Set(["attualone.com.br", "www.attualone.com.br"]);
 
 export async function proxy(request: NextRequest) {
   const hostname = request.headers.get("host")?.split(":")[0]?.toLowerCase() ?? "";
@@ -11,13 +13,21 @@ export async function proxy(request: NextRequest) {
 
   if (hostname === STORE_HOST) {
     if (pathname === "/") {
-      return NextResponse.redirect(new URL("/hamburgueria-07", request.url));
+      const url = request.nextUrl.clone();
+      url.pathname = "/loja";
+      return NextResponse.rewrite(url);
     }
     if (!pathname.startsWith("/api/") && !pathname.startsWith("/loja/")) {
       const url = request.nextUrl.clone();
       url.pathname = `/loja${pathname}`;
       return NextResponse.rewrite(url);
     }
+  }
+
+  if (ROOT_HOSTS.has(hostname) && pathname !== "/" && !pathname.startsWith("/_next/") && pathname !== "/favicon.ico") {
+    // Keep the marketing root isolated from the authenticated app. Existing
+    // deep links are forwarded to the canonical app hostname.
+    return NextResponse.redirect(new URL(`https://${APP_HOST}${pathname}${request.nextUrl.search}`));
   }
 
   const config = getSupabasePublicConfig();
