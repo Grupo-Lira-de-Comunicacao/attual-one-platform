@@ -11,6 +11,10 @@ export async function proxy(request: NextRequest) {
   const hostname = request.headers.get("host")?.split(":")[0]?.toLowerCase() ?? "";
   const pathname = request.nextUrl.pathname;
 
+  if (request.method === "POST" && pathname === "/api/storefront/padaria-conquista" && request.cookies.get("attual_age_18")?.value !== "1") {
+    return NextResponse.json({ error: "Confirme que você tem 18 anos ou mais antes de concluir pedidos nesta loja." }, { status: 403 });
+  }
+
   if (hostname === STORE_HOST) {
     if (pathname === "/") {
       const url = request.nextUrl.clone();

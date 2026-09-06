@@ -7,7 +7,11 @@ export type PublicStoreConfig = {
   name: string;
   tagline: string;
   logoText: string;
+  logoUrl?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
   coverMessage: string;
+  promotionNote?: string;
   open: boolean;
   acceptOrdersWhenClosed: boolean;
   openingHours: string;
@@ -15,6 +19,7 @@ export type PublicStoreConfig = {
   deliveryFee: number;
   city: string;
   state: string;
+  alcoholMinAge?: number;
 };
 
 export type PublicStoreCategory = {
@@ -35,6 +40,7 @@ export type PublicStoreProduct = {
   trackStock: boolean;
   currentStock: number;
   status: "available" | "out_of_stock";
+  requiresAgeVerification?: boolean;
 };
 
 export type PublicStorePayload = {
@@ -66,6 +72,7 @@ export type PublicCheckoutInput = {
   };
   paymentMethod: PublicPaymentMethod;
   couponCode?: string;
+  ageConfirmed?: boolean;
   items: PublicCheckoutItem[];
 };
 

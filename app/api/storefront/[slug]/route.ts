@@ -30,9 +30,7 @@ function adminClient() {
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function text(profile: Record<string, unknown>, key: string, fallback: string) {
@@ -57,13 +55,7 @@ function numberValue(profile: Record<string, unknown>, key: string, fallback = 0
 function logoText(name: string, profile: Record<string, unknown>) {
   const configured = profile.logo_text;
   if (typeof configured === "string" && configured.trim()) return configured.trim().slice(0, 4).toUpperCase();
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => (/^\d+$/.test(part) ? part.slice(-1) : part.slice(0, 1)))
-    .join("")
-    .toUpperCase() || "AO";
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => (/^\d+$/.test(part) ? part.slice(-1) : part.slice(0, 1))).join("").toUpperCase() || "AO";
 }
 
 function apiError(message: string, status: number) {
@@ -84,10 +76,36 @@ function safeCheckoutMessage(message: string) {
   return known.find(([code]) => message.includes(code))?.[1] ?? "Não foi possível concluir o pedido.";
 }
 
+function localDateInfo(timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  const weekday = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[value("weekday") as "Mon"|"Tue"|"Wed"|"Thu"|"Fri"|"Sat"|"Sun"] ?? 0;
+  return { weekday, date: `${value("year")}-${value("month")}-${value("day")}` };
+}
+
+function promotionPrice(profile: Record<string, unknown>, sku: string | null, timeZone: string): number | undefined {
+  if (!sku) return undefined;
+  const promotion = asRecord(profile.weekly_promotion);
+  const price = Number(promotion.price_cents);
+  const weekdays = Array.isArray(promotion.weekdays) ? promotion.weekdays.map(Number) : [];
+  const eligible = Array.isArray(promotion.eligible_skus) ? promotion.eligible_skus.filter((value): value is string => typeof value === "string") : [];
+  const excluded = Array.isArray(promotion.excluded_dates) ? promotion.excluded_dates.filter((value): value is string => typeof value === "string") : [];
+  if (!Number.isFinite(price) || price < 0 || !eligible.includes(sku)) return undefined;
+  const now = localDateInfo(timeZone);
+  if (!weekdays.includes(now.weekday) || excluded.includes(now.date)) return undefined;
+  return price / 100;
+}
+
 async function loadStore(client: SupabaseClient, slug: string): Promise<PublicStorePayload | null> {
   const { data: company, error: companyError } = await client
     .from("companies")
-    .select("id,name,slug,public_store_enabled,public_store_open,public_profile")
+    .select("id,name,slug,public_store_enabled,public_store_open,public_profile,timezone")
     .eq("slug", slug)
     .eq("public_store_enabled", true)
     .is("deleted_at", null)
@@ -97,31 +115,17 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
   if (!company) return null;
 
   const [{ data: categories, error: categoriesError }, { data: products, error: productsError }] = await Promise.all([
-    client
-      .from("categories")
-      .select("id,name,description,display_order")
-      .eq("company_id", company.id)
-      .eq("status", "active")
-      .is("deleted_at", null)
-      .order("display_order", { ascending: true }),
-    client
-      .from("products")
-      .select("id,category_id,name,description,price_cents,promotional_price_cents,image_url,track_stock,current_stock,status")
-      .eq("company_id", company.id)
-      .eq("is_public", true)
-      .in("status", ["available", "out_of_stock"])
-      .is("deleted_at", null)
-      .order("name", { ascending: true }),
+    client.from("categories").select("id,name,description,display_order").eq("company_id", company.id).eq("status", "active").is("deleted_at", null).order("display_order", { ascending: true }),
+    client.from("products").select("id,category_id,name,description,price_cents,promotional_price_cents,image_url,sku,track_stock,current_stock,status").eq("company_id", company.id).eq("is_public", true).in("status", ["available", "out_of_stock"]).is("deleted_at", null).order("name", { ascending: true }),
   ]);
 
   const readError = categoriesError ?? productsError;
   if (readError) throw new Error(readError.message);
 
   const profile = asRecord(company.public_profile);
-  const city = text(profile, "city", "");
-  const state = text(profile, "state", "");
   const description = text(profile, "description", "Loja online");
   const deliveryFeeCents = numberValue(profile, "delivery_fee_cents", 0);
+  const alcoholCategoryIds = new Set((categories ?? []).filter((row) => row.name.toLowerCase().includes("cerveja") || row.name.toLowerCase().includes("alco")).map((row) => row.id));
 
   return {
     config: {
@@ -130,32 +134,33 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
       name: company.name,
       tagline: text(profile, "tagline", description),
       logoText: logoText(company.name, profile),
+      logoUrl: text(profile, "logo_url", "") || undefined,
+      primaryColor: text(profile, "primary_color", "") || undefined,
+      secondaryColor: text(profile, "secondary_color", "") || undefined,
       coverMessage: text(profile, "cover_message", description),
+      promotionNote: text(profile, "promotion_note", "") || undefined,
       open: Boolean(company.public_store_open),
       acceptOrdersWhenClosed: bool(profile, "accept_orders_when_closed", false),
       openingHours: text(profile, "opening_hours", "Consulte os horários com o estabelecimento"),
       closedMessage: text(profile, "closed_message", "Estamos fechados agora. Volte no próximo horário!"),
       deliveryFee: Math.max(0, deliveryFeeCents) / 100,
-      city,
-      state,
+      city: text(profile, "city", ""),
+      state: text(profile, "state", ""),
+      alcoholMinAge: Math.max(0, numberValue(profile, "alcohol_min_age", 0)) || undefined,
     },
-    categories: (categories ?? []).map((row) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      displayOrder: row.display_order,
-    })),
+    categories: (categories ?? []).map((row) => ({ id: row.id, name: row.name, description: row.description, displayOrder: row.display_order })),
     products: (products ?? []).map((row) => ({
       id: row.id,
       categoryId: row.category_id,
       name: row.name,
       description: row.description,
       price: row.price_cents / 100,
-      promotionalPrice: row.promotional_price_cents == null ? undefined : row.promotional_price_cents / 100,
+      promotionalPrice: promotionPrice(profile, row.sku, company.timezone ?? "America/Sao_Paulo") ?? (row.promotional_price_cents == null ? undefined : row.promotional_price_cents / 100),
       imageUrl: row.image_url ?? undefined,
       trackStock: Boolean(row.track_stock),
       currentStock: Number(row.current_stock),
       status: row.status,
+      requiresAgeVerification: alcoholCategoryIds.has(row.category_id),
     })),
   };
 }
@@ -186,7 +191,6 @@ function parseCheckout(value: unknown): PublicCheckoutInput | null {
 export async function GET(_request: NextRequest, context: { params: Promise<{ slug: string }> }) {
   const { slug } = await context.params;
   if (!slugPattern.test(slug)) return apiError("Loja inválida.", 400);
-
   try {
     const store = await loadStore(publicClient(), slug);
     if (!store) return apiError("Loja não encontrada.", 404);
@@ -202,13 +206,8 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sl
 export async function POST(request: NextRequest, context: { params: Promise<{ slug: string }> }) {
   const { slug } = await context.params;
   if (!slugPattern.test(slug)) return apiError("Loja inválida.", 400);
-
   let payload: PublicCheckoutInput | null = null;
-  try {
-    payload = parseCheckout(await request.json());
-  } catch {
-    return apiError("Dados de checkout inválidos.", 400);
-  }
+  try { payload = parseCheckout(await request.json()); } catch { return apiError("Dados de checkout inválidos.", 400); }
   if (!payload) return apiError("Dados de checkout inválidos.", 400);
 
   try {
@@ -222,12 +221,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       p_delivery_address: payload.fulfillment === "delivery" ? payload.address ?? {} : null,
       p_payment_method: payload.paymentMethod,
       p_coupon_code: payload.couponCode?.trim().toUpperCase() || null,
-      p_items: payload.items.map((item) => ({
-        product_id: item.productId,
-        quantity: item.quantity,
-        additions: item.additions ?? [],
-        note: item.note?.trim() || null,
-      })),
+      p_items: payload.items.map((item) => ({ product_id: item.productId, quantity: item.quantity, additions: item.additions ?? [], note: item.note?.trim() || null })),
     });
 
     if (error) {
@@ -240,26 +234,16 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
 
     let trackingToken: string | undefined;
     if (payload.fulfillment === "delivery") {
-      const { data: delivery, error: deliveryError } = await client
-        .from("deliveries")
-        .select("public_tracking_token")
-        .eq("order_id", String(order.id))
-        .maybeSingle();
+      const { data: delivery, error: deliveryError } = await client.from("deliveries").select("public_tracking_token").eq("order_id", String(order.id)).maybeSingle();
       if (deliveryError) console.error("[public-storefront] tracking token indisponível", deliveryError.code, deliveryError.message);
       else if (delivery?.public_tracking_token) trackingToken = String(delivery.public_tracking_token);
     }
 
     const result: PublicCheckoutResult = {
-      id: String(order.id),
-      number: Number(order.number),
-      total: Number(order.total_cents) / 100,
-      discount: Number(order.discount_cents) / 100,
-      deliveryFee: Number(order.delivery_fee_cents) / 100,
-      status: String(order.status),
-      paymentStatus: String(order.payment_status),
-      fulfillment: String(order.fulfillment) as PublicCheckoutResult["fulfillment"],
-      createdAt: String(order.created_at),
-      trackingToken,
+      id: String(order.id), number: Number(order.number), total: Number(order.total_cents) / 100,
+      discount: Number(order.discount_cents) / 100, deliveryFee: Number(order.delivery_fee_cents) / 100,
+      status: String(order.status), paymentStatus: String(order.payment_status),
+      fulfillment: String(order.fulfillment) as PublicCheckoutResult["fulfillment"], createdAt: String(order.created_at), trackingToken,
     };
     return NextResponse.json({ order: result }, { status: 201 });
   } catch (error) {
