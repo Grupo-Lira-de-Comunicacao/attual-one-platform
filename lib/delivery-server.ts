@@ -61,6 +61,8 @@ export function toDriverDelivery(row: Record<string, unknown>): DriverDelivery {
     customerPhone: typeof order?.customer_phone === "string" && order.customer_phone ? order.customer_phone : undefined,
     driverPhone: typeof row.driver_phone === "string" && row.driver_phone ? row.driver_phone : undefined,
     driverToken: String(row.driver_access_token),
+    requiresAgeDocument: Boolean(order?.contains_age_restricted_product),
+    ageHandoffStatus: typeof order?.age_handoff_status === "string" ? order.age_handoff_status as DriverDelivery["ageHandoffStatus"] : undefined,
   };
 }
 
@@ -68,6 +70,6 @@ export const deliverySelect = [
   "id","company_id","order_id","status","driver_name","driver_phone",
   "public_tracking_token","driver_access_token","current_lat","current_lng","accuracy_m",
   "last_location_at","assigned_at","started_at","delivered_at","updated_at",
-  "orders(number,status,customer_name,customer_phone,delivery_address,updated_at)",
+  "orders(number,status,customer_name,customer_phone,delivery_address,contains_age_restricted_product,age_handoff_status,updated_at)",
   "companies(name,slug)",
 ].join(",");
