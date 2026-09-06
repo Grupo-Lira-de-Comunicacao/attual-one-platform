@@ -9,6 +9,15 @@ export type PublicDeliveryZone = {
   isDefault: boolean;
 };
 
+export type PizzaItemConfiguration = {
+  kind: "pizza";
+  mode: "whole" | "half";
+  size: string;
+  secondProductId?: string;
+};
+
+export type PublicItemConfiguration = PizzaItemConfiguration;
+
 export type PublicStoreConfig = {
   companyId: string;
   slug: string;
@@ -28,6 +37,8 @@ export type PublicStoreConfig = {
   city: string;
   state: string;
   alcoholMinAge?: number;
+  pizzaConfiguratorEnabled?: boolean;
+  pizzaHalfPriceRule?: "highest";
 };
 
 export type PublicStoreCategory = {
@@ -45,10 +56,14 @@ export type PublicStoreProduct = {
   price: number;
   promotionalPrice?: number;
   imageUrl?: string;
+  sku?: string;
   trackStock: boolean;
   currentStock: number;
   status: "available" | "out_of_stock";
   requiresAgeVerification?: boolean;
+  isPizza?: boolean;
+  pizzaFlavor?: string;
+  pizzaSize?: string;
 };
 
 export type PublicStorePayload = {
@@ -63,6 +78,7 @@ export type PublicCheckoutItem = {
   quantity: number;
   additions?: string[];
   note?: string;
+  configuration?: PublicItemConfiguration;
 };
 
 export type PublicCheckoutInput = {
