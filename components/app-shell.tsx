@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Boxes, CircleDollarSign, Gift, Import,
+  BarChart3, Bike, Boxes, CircleDollarSign, Gift, Import,
   LayoutDashboard, Menu, ReceiptText, Search, Settings,
   ShoppingBag, Users, X, Bell, Plus,
 } from "lucide-react";
@@ -22,6 +22,7 @@ const initials = (name: string) => name.split(" ").filter(Boolean).map((word) =>
 const NAVIGATION = [
   { label: "Visão geral", href: "/", icon: LayoutDashboard },
   { label: "Pedidos", href: "/pedidos", icon: ReceiptText },
+  { label: "Entregas", href: "/entregas", icon: Bike },
   { label: "Produtos", href: "/produtos", icon: ShoppingBag },
   { label: "Estoque", href: "/estoque", icon: Boxes },
   { label: "Clientes", href: "/clientes", icon: Users },
@@ -52,7 +53,7 @@ function useSidebarCounters(companyId: string | null, enabled: boolean): Sidebar
 export function AppShell({ children, identity, memberships, selectedCompanyId }: { children: React.ReactNode; identity: Identity; memberships: CompanyMembership[]; selectedCompanyId: string | null }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const isChromeless = ["/site", "/loja", "/login", "/recuperar-senha", "/nova-senha", "/sem-empresa", "/selecionar-empresa", "/mestre"].some((prefix) => pathname.startsWith(prefix));
+  const isChromeless = ["/site", "/loja", "/motoboy", "/login", "/recuperar-senha", "/nova-senha", "/sem-empresa", "/selecionar-empresa", "/mestre"].some((prefix) => pathname.startsWith(prefix));
   const counts = useSidebarCounters(selectedCompanyId, !isChromeless);
 
   if (isChromeless) return <>{children}</>;
@@ -73,9 +74,9 @@ export function AppShell({ children, identity, memberships, selectedCompanyId }:
         <CompanySwitcher companyName={identity.companyName} memberships={memberships} selectedCompanyId={selectedCompanyId} />
         <nav aria-label="Menu principal">
           <p className="nav-label">OPERAÇÃO</p>
-          {NAVIGATION.slice(0, 7).map((item) => <NavItem key={item.href} item={item} badge={badges[item.href]} active={pathname === item.href} close={() => setOpen(false)} />)}
+          {NAVIGATION.slice(0, 8).map((item) => <NavItem key={item.href} item={item} badge={badges[item.href]} active={pathname === item.href} close={() => setOpen(false)} />)}
           <p className="nav-label nav-label-spaced">GESTÃO</p>
-          {NAVIGATION.slice(7).map((item) => <NavItem key={item.href} item={item} badge={badges[item.href]} active={pathname === item.href} close={() => setOpen(false)} />)}
+          {NAVIGATION.slice(8).map((item) => <NavItem key={item.href} item={item} badge={badges[item.href]} active={pathname === item.href} close={() => setOpen(false)} />)}
         </nav>
         <div className="sidebar-help">
           <span className="help-icon">?</span>
