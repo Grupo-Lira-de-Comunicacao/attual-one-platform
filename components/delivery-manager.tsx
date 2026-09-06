@@ -36,6 +36,7 @@ export function DeliveryManager({ companyId }: { companyId?: string }) {
   const [driverName, setDriverName] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
   const [copied, setCopied] = useState("");
+  const [appOrigin, setAppOrigin] = useState("https://app.attualone.com.br");
 
   async function load() {
     if (!companyId) return;
@@ -49,7 +50,7 @@ export function DeliveryManager({ companyId }: { companyId?: string }) {
     setLoading(false);
   }
 
-  useEffect(() => { void load(); }, [companyId]);
+  useEffect(() => { setAppOrigin(window.location.origin); void load(); }, [companyId]);
   useEffect(() => {
     const timer = window.setInterval(() => void load(), 15000);
     return () => window.clearInterval(timer);
@@ -90,7 +91,7 @@ export function DeliveryManager({ companyId }: { companyId?: string }) {
       {filtered.map((row) => {
         const addr = row.orders?.delivery_address ?? {};
         const destination = [addr.street,addr.number,addr.district,addr.city].filter(Boolean).join(", ");
-        const driverUrl = `${window.location.origin}/motoboy/${row.driver_access_token}`;
+        const driverUrl = `${appOrigin}/motoboy/${row.driver_access_token}`;
         const storeSlug = row.companies?.slug ?? "";
         const trackingUrl = `https://loja.attualone.com.br/${storeSlug}/rastreamento/${row.public_tracking_token}`;
         const activeLocation = row.current_lat != null && row.current_lng != null;
