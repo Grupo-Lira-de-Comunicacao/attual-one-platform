@@ -27,27 +27,31 @@ export function CompanySettings({ companyId }: { companyId?: string }) {
 
   useEffect(() => {
     if (!companyId) return;
-    supabase.from("companies")
-      .select("id,name,slug,public_store_enabled,public_store_open,public_profile")
-      .eq("id", companyId)
-      .single()
-      .then(({ data, error }) => {
-        if (error) return setStatus(error.message);
-        const row = data as CompanyRow;
-        const p = row.public_profile ?? {};
-        setCompany(row);
-        setForm({
-          name: row.name,
-          tagline: String(p.tagline ?? ""),
-          description: String(p.description ?? ""),
-          openingHours: String(p.opening_hours ?? ""),
-          city: String(p.city ?? ""),
-          state: String(p.state ?? ""),
-          deliveryFee: String(Number(p.delivery_fee_cents ?? 0) / 100),
-          storeEnabled: row.public_store_enabled,
-          storeOpen: row.public_store_open,
-        });
+    let cancelled = false;
+    const load = async () => {
+      const result = await supabase.from("companies")
+        .select("id,name,slug,public_store_enabled,public_store_open,public_profile")
+        .eq("id", companyId)
+        .single();
+      if (cancelled) return;
+      if (result.error) { setStatus(result.error.message); return; }
+      const row = result.data as CompanyRow;
+      const p = row.public_profile ?? {};
+      setCompany(row);
+      setForm({
+        name: row.name,
+        tagline: String(p.tagline ?? ""),
+        description: String(p.description ?? ""),
+        openingHours: String(p.opening_hours ?? ""),
+        city: String(p.city ?? ""),
+        state: String(p.state ?? ""),
+        deliveryFee: String(Number(p.delivery_fee_cents ?? 0) / 100),
+        storeEnabled: row.public_store_enabled,
+        storeOpen: row.public_store_open,
       });
+    };
+    void load();
+    return () => { cancelled = true; };
   }, [companyId, supabase]);
 
   const save = async () => {
