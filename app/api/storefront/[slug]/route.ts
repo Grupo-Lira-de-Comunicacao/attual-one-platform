@@ -238,6 +238,17 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     const order = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
     if (!order?.id) throw new Error("RPC não retornou pedido.");
 
+    let trackingToken: string | undefined;
+    if (payload.fulfillment === "delivery") {
+      const { data: delivery, error: deliveryError } = await client
+        .from("deliveries")
+        .select("public_tracking_token")
+        .eq("order_id", String(order.id))
+        .maybeSingle();
+      if (deliveryError) console.error("[public-storefront] tracking token indisponível", deliveryError.code, deliveryError.message);
+      else if (delivery?.public_tracking_token) trackingToken = String(delivery.public_tracking_token);
+    }
+
     const result: PublicCheckoutResult = {
       id: String(order.id),
       number: Number(order.number),
@@ -248,6 +259,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       paymentStatus: String(order.payment_status),
       fulfillment: String(order.fulfillment) as PublicCheckoutResult["fulfillment"],
       createdAt: String(order.created_at),
+      trackingToken,
     };
     return NextResponse.json({ order: result }, { status: 201 });
   } catch (error) {
