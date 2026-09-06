@@ -94,7 +94,7 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
 
   const [categoriesResult, productsResult, zonesResult] = await Promise.all([
     client.from("categories").select("id,name,description,display_order").eq("company_id", company.id).eq("status", "active").is("deleted_at", null).order("display_order", { ascending: true }),
-    client.from("products").select("id,category_id,name,description,price_cents,promotional_price_cents,image_url,sku,track_stock,current_stock,status").eq("company_id", company.id).eq("is_public", true).in("status", ["available", "out_of_stock"]).is("deleted_at", null).order("name", { ascending: true }),
+    client.from("products").select("id,category_id,name,description,price_cents,promotional_price_cents,image_url,sku,track_stock,current_stock,status,age_restricted_min").eq("company_id", company.id).eq("is_public", true).in("status", ["available", "out_of_stock"]).is("deleted_at", null).order("name", { ascending: true }),
     client.from("delivery_zones").select("id,name,fee_cents,distance_band,is_default,display_order").eq("company_id", company.id).eq("active", true).order("display_order", { ascending: true }),
   ]);
   const readError = categoriesResult.error ?? productsResult.error ?? zonesResult.error;
@@ -130,7 +130,7 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
         id: row.id, categoryId: row.category_id, name: row.name, description: row.description, price: row.price_cents / 100,
         promotionalPrice: promotionPrice(profile, row.sku, company.timezone ?? "America/Sao_Paulo") ?? (row.promotional_price_cents == null ? undefined : row.promotional_price_cents / 100),
         imageUrl: row.image_url ?? undefined, sku: row.sku ?? undefined, trackStock: Boolean(row.track_stock), currentStock: Number(row.current_stock), status: row.status,
-        requiresAgeVerification: alcoholCategoryIds.has(row.category_id), isPizza, ...parts,
+        requiresAgeVerification: Number(row.age_restricted_min ?? 0) >= 18 || alcoholCategoryIds.has(row.category_id), isPizza, ...parts,
       };
     }),
     deliveryZones: zones.map((row) => ({ id: row.id, name: row.name, fee: Number(row.fee_cents) / 100, distanceBand: row.distance_band ?? undefined, isDefault: Boolean(row.is_default) })),
@@ -144,6 +144,7 @@ function parseCheckout(value: unknown): PublicCheckoutInput | null {
   if (typeof body.identified !== "boolean") return null;
   if (typeof body.fulfillment !== "string" || !fulfillmentValues.has(body.fulfillment)) return null;
   if (typeof body.paymentMethod !== "string" || !paymentValues.has(body.paymentMethod)) return null;
+  if (body.ageConfirmed != null && typeof body.ageConfirmed !== "boolean") return null;
   if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 50) return null;
   if (body.identified && (typeof body.name !== "string" || !body.name.trim() || typeof body.phone !== "string" || !body.phone.trim())) return null;
   if (body.fulfillment === "delivery") {
@@ -204,9 +205,38 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
     const couponCode = payload.couponCode?.trim().toUpperCase() || "";
     let customerContext = await authenticatedCustomer(client, slug);
 
+    const { data: company, error: companyError } = await client.from("companies").select("id").eq("slug", slug).is("deleted_at", null).maybeSingle();
+    if (companyError) throw companyError;
+    if (!company?.id) return apiError("Loja não encontrada.", 404);
+
+    const productIds = new Set<string>();
+    for (const item of payload.items) {
+      productIds.add(item.productId);
+      if (item.configuration?.kind === "pizza" && item.configuration.mode === "half" && item.configuration.secondProductId) productIds.add(item.configuration.secondProductId);
+    }
+    const { data: productRows, error: productError } = await client
+      .from("products")
+      .select("id,category_id,age_restricted_min")
+      .eq("company_id", company.id)
+      .in("id", Array.from(productIds));
+    if (productError) throw productError;
+
+    const categoryIds = Array.from(new Set((productRows ?? []).map((row) => String(row.category_id))));
+    const { data: categoryRows, error: categoryError } = categoryIds.length
+      ? await client.from("categories").select("id,name").eq("company_id", company.id).in("id", categoryIds)
+      : { data: [], error: null };
+    if (categoryError) throw categoryError;
+    const alcoholCategoryIds = new Set((categoryRows ?? []).filter((row) => {
+      const name = String(row.name ?? "").toLocaleLowerCase("pt-BR");
+      return name.includes("cerveja") || name.includes("álcool") || name.includes("alcool");
+    }).map((row) => String(row.id)));
+    const containsAgeRestricted = (productRows ?? []).some((row) => Number(row.age_restricted_min ?? 0) >= 18 || alcoholCategoryIds.has(String(row.category_id)));
+
+    if (containsAgeRestricted && payload.ageConfirmed !== true) {
+      return apiError("Este pedido contém bebida alcoólica. A bebida só será entregue a uma pessoa maior de 18 anos após conferência de documento com foto.", 409);
+    }
+
     if (couponCode) {
-      const { data: company } = await client.from("companies").select("id").eq("slug", slug).is("deleted_at", null).maybeSingle();
-      if (!company?.id) return apiError("Loja não encontrada.", 404);
       const { data: coupon } = await client.from("coupons").select("id").eq("company_id", company.id).eq("code", couponCode).is("deleted_at", null).maybeSingle();
       if (coupon?.id) {
         const { count: privateCount, error: privateError } = await client
@@ -290,6 +320,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       discount: Number(order.discount_cents) / 100, deliveryFee: Number(order.delivery_fee_cents) / 100,
       status: String(order.status), paymentStatus: String(order.payment_status),
       fulfillment: String(order.fulfillment) as PublicCheckoutResult["fulfillment"], createdAt: String(order.created_at), trackingToken,
+      requiresAgeDocument: Boolean(order.contains_age_restricted_product) || containsAgeRestricted,
     };
     return NextResponse.json({ order: result }, { status: 201 });
   } catch (error) {
