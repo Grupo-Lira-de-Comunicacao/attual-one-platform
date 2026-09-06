@@ -313,7 +313,7 @@ export function Storefront({ slug }: { slug: string }) {
         />
       )}
 
-      {confirmed && <Confirmation order={confirmed} onClose={() => setConfirmed(null)} />}
+      {confirmed && <Confirmation order={confirmed} slug={slug} onClose={() => setConfirmed(null)} />}
     </div>
   );
 }
@@ -541,7 +541,11 @@ function CheckoutModal({ slug, store, cart, subtotal, onClose, onConfirmed }: {
   );
 }
 
-function Confirmation({ order, onClose }: { order: PublicCheckoutResult; onClose: () => void }) {
+function Confirmation({ order, slug, onClose }: { order: PublicCheckoutResult; slug: string; onClose: () => void }) {
+  const trackingHref = order.trackingToken
+    ? `/loja/${encodeURIComponent(slug)}/rastreamento/${encodeURIComponent(order.trackingToken)}`
+    : null;
+
   return (
     <div className="store-overlay confirmation-overlay">
       <section className="confirmation">
@@ -559,6 +563,11 @@ function Confirmation({ order, onClose }: { order: PublicCheckoutResult; onClose
           <div><i>3</i><span>Preparação</span></div>
           <div><i>4</i><span>Concluído</span></div>
         </div>
+        {order.fulfillment === "delivery" && trackingHref && (
+          <a className="store-primary" href={trackingHref} style={{ marginBottom: 8 }}>
+            Acompanhar minha entrega <ChevronRight />
+          </a>
+        )}
         <button className="store-primary" onClick={onClose}>Voltar à loja</button>
       </section>
     </div>
