@@ -1,6 +1,7 @@
 export const PUBLIC = [
   "/site",
   "/loja",
+  "/motoboy",
   "/login",
   "/recuperar-senha",
   "/nova-senha",
@@ -8,6 +9,7 @@ export const PUBLIC = [
   "/api/auth/logout",
   "/api/integrations/casting/events",
   "/api/storefront",
+  "/api/delivery",
 ];
 export const MEMBERSHIP_ROUTES = ["/sem-empresa", "/selecionar-empresa", "/api/company"];
 export const PLATFORM_ADMIN_ROUTES = ["/mestre", "/api/platform"];
