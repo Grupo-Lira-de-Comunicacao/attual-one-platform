@@ -1,4 +1,5 @@
 export type DeliveryStatus = "pending" | "assigned" | "ready" | "out_for_delivery" | "delivered" | "cancelled";
+export type AgeHandoffStatus = "not_required" | "document_required" | "verified";
 
 export type PublicDeliveryTracking = {
   orderNumber: number;
@@ -17,4 +18,6 @@ export type DriverDelivery = PublicDeliveryTracking & {
   customerPhone?: string;
   driverPhone?: string;
   driverToken: string;
+  requiresAgeDocument?: boolean;
+  ageHandoffStatus?: AgeHandoffStatus;
 };
