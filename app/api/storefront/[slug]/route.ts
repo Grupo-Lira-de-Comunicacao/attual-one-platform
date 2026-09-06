@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   PublicCheckoutInput,
   PublicCheckoutResult,
@@ -32,35 +33,11 @@ function adminClient() {
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
-
-function text(profile: Record<string, unknown>, key: string, fallback: string) {
-  const value = profile[key];
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function bool(profile: Record<string, unknown>, key: string, fallback = false) {
-  const value = profile[key];
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") return value.toLowerCase() === "true";
-  return fallback;
-}
-
-function numberValue(profile: Record<string, unknown>, key: string, fallback = 0) {
-  const value = profile[key];
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
-  return fallback;
-}
-
-function logoText(name: string, profile: Record<string, unknown>) {
-  const configured = profile.logo_text;
-  if (typeof configured === "string" && configured.trim()) return configured.trim().slice(0, 4).toUpperCase();
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => (/^\d+$/.test(part) ? part.slice(-1) : part.slice(0, 1))).join("").toUpperCase() || "AO";
-}
-
-function apiError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status });
-}
+function text(profile: Record<string, unknown>, key: string, fallback: string) { const value = profile[key]; return typeof value === "string" && value.trim() ? value.trim() : fallback; }
+function bool(profile: Record<string, unknown>, key: string, fallback = false) { const value = profile[key]; if (typeof value === "boolean") return value; if (typeof value === "string") return value.toLowerCase() === "true"; return fallback; }
+function numberValue(profile: Record<string, unknown>, key: string, fallback = 0) { const value = profile[key]; if (typeof value === "number" && Number.isFinite(value)) return value; if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value); return fallback; }
+function logoText(name: string, profile: Record<string, unknown>) { const configured = profile.logo_text; if (typeof configured === "string" && configured.trim()) return configured.trim().slice(0, 4).toUpperCase(); return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => (/^\d+$/.test(part) ? part.slice(-1) : part.slice(0, 1))).join("").toUpperCase() || "AO"; }
+function apiError(message: string, status: number) { return NextResponse.json({ error: message }, { status }); }
 
 function safeCheckoutMessage(message: string) {
   const known: Array<[string, string]> = [
@@ -97,14 +74,7 @@ function promotionPrice(profile: Record<string, unknown>, sku: string | null, ti
 }
 
 async function loadStore(client: SupabaseClient, slug: string): Promise<PublicStorePayload | null> {
-  const { data: company, error: companyError } = await client
-    .from("companies")
-    .select("id,name,slug,public_store_enabled,public_store_open,public_profile,timezone")
-    .eq("slug", slug)
-    .eq("public_store_enabled", true)
-    .is("deleted_at", null)
-    .maybeSingle();
-
+  const { data: company, error: companyError } = await client.from("companies").select("id,name,slug,public_store_enabled,public_store_open,public_profile,timezone").eq("slug", slug).eq("public_store_enabled", true).is("deleted_at", null).maybeSingle();
   if (companyError) throw new Error(companyError.message);
   if (!company) return null;
 
@@ -113,10 +83,8 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
     client.from("products").select("id,category_id,name,description,price_cents,promotional_price_cents,image_url,sku,track_stock,current_stock,status").eq("company_id", company.id).eq("is_public", true).in("status", ["available", "out_of_stock"]).is("deleted_at", null).order("name", { ascending: true }),
     client.from("delivery_zones").select("id,name,fee_cents,distance_band,is_default,display_order").eq("company_id", company.id).eq("active", true).order("display_order", { ascending: true }),
   ]);
-
   const readError = categoriesResult.error ?? productsResult.error ?? zonesResult.error;
   if (readError) throw new Error(readError.message);
-
   const categories = categoriesResult.data ?? [];
   const products = productsResult.data ?? [];
   const zones = zonesResult.data ?? [];
@@ -127,46 +95,23 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
 
   return {
     config: {
-      companyId: company.id,
-      slug: company.slug,
-      name: company.name,
-      tagline: text(profile, "tagline", description),
-      logoText: logoText(company.name, profile),
-      logoUrl: text(profile, "logo_url", "") || undefined,
-      primaryColor: text(profile, "primary_color", "") || undefined,
-      secondaryColor: text(profile, "secondary_color", "") || undefined,
-      coverMessage: text(profile, "cover_message", description),
-      promotionNote: text(profile, "promotion_note", "") || undefined,
-      open: Boolean(company.public_store_open),
-      acceptOrdersWhenClosed: bool(profile, "accept_orders_when_closed", false),
-      openingHours: text(profile, "opening_hours", "Consulte os horários com o estabelecimento"),
-      closedMessage: text(profile, "closed_message", "Estamos fechados agora. Volte no próximo horário!"),
-      deliveryFee: Math.max(0, deliveryFeeCents) / 100,
-      city: text(profile, "city", ""),
-      state: text(profile, "state", ""),
-      alcoholMinAge: Math.max(0, numberValue(profile, "alcohol_min_age", 0)) || undefined,
+      companyId: company.id, slug: company.slug, name: company.name,
+      tagline: text(profile, "tagline", description), logoText: logoText(company.name, profile),
+      logoUrl: text(profile, "logo_url", "") || undefined, primaryColor: text(profile, "primary_color", "") || undefined,
+      secondaryColor: text(profile, "secondary_color", "") || undefined, coverMessage: text(profile, "cover_message", description),
+      promotionNote: text(profile, "promotion_note", "") || undefined, open: Boolean(company.public_store_open),
+      acceptOrdersWhenClosed: bool(profile, "accept_orders_when_closed", false), openingHours: text(profile, "opening_hours", "Consulte os horários com o estabelecimento"),
+      closedMessage: text(profile, "closed_message", "Estamos fechados agora. Volte no próximo horário!"), deliveryFee: Math.max(0, deliveryFeeCents) / 100,
+      city: text(profile, "city", ""), state: text(profile, "state", ""), alcoholMinAge: Math.max(0, numberValue(profile, "alcohol_min_age", 0)) || undefined,
     },
     categories: categories.map((row) => ({ id: row.id, name: row.name, description: row.description, displayOrder: row.display_order })),
     products: products.map((row) => ({
-      id: row.id,
-      categoryId: row.category_id,
-      name: row.name,
-      description: row.description,
-      price: row.price_cents / 100,
+      id: row.id, categoryId: row.category_id, name: row.name, description: row.description, price: row.price_cents / 100,
       promotionalPrice: promotionPrice(profile, row.sku, company.timezone ?? "America/Sao_Paulo") ?? (row.promotional_price_cents == null ? undefined : row.promotional_price_cents / 100),
-      imageUrl: row.image_url ?? undefined,
-      trackStock: Boolean(row.track_stock),
-      currentStock: Number(row.current_stock),
-      status: row.status,
+      imageUrl: row.image_url ?? undefined, trackStock: Boolean(row.track_stock), currentStock: Number(row.current_stock), status: row.status,
       requiresAgeVerification: alcoholCategoryIds.has(row.category_id),
     })),
-    deliveryZones: zones.map((row) => ({
-      id: row.id,
-      name: row.name,
-      fee: Number(row.fee_cents) / 100,
-      distanceBand: row.distance_band ?? undefined,
-      isDefault: Boolean(row.is_default),
-    })),
+    deliveryZones: zones.map((row) => ({ id: row.id, name: row.name, fee: Number(row.fee_cents) / 100, distanceBand: row.distance_band ?? undefined, isDefault: Boolean(row.is_default) })),
   };
 }
 
@@ -228,14 +173,31 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       p_coupon_code: payload.couponCode?.trim().toUpperCase() || null,
       p_items: payload.items.map((item) => ({ product_id: item.productId, quantity: item.quantity, additions: item.additions ?? [], note: item.note?.trim() || null })),
     });
-
     if (error) {
       console.error("[public-storefront] checkout rejeitado", error.code, error.message);
       return apiError(safeCheckoutMessage(error.message), 409);
     }
 
-    const order = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+    let order = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
     if (!order?.id) throw new Error("RPC não retornou pedido.");
+
+    try {
+      const auth = await createSupabaseServerClient();
+      const { data: userData } = await auth.auth.getUser();
+      if (userData.user) {
+        const { data: company } = await client.from("companies").select("id").eq("slug", slug).is("deleted_at", null).maybeSingle();
+        if (company?.id) {
+          const { data: account } = await client.from("store_customer_accounts").select("customer_id").eq("company_id", company.id).eq("auth_user_id", userData.user.id).maybeSingle();
+          if (account?.customer_id) {
+            const { data: linked, error: linkError } = await client.rpc("link_public_store_order_customer", { p_order: String(order.id), p_customer: String(account.customer_id) });
+            if (linkError) console.error("[public-storefront] vínculo de cliente não aplicado", linkError.code, linkError.message);
+            else if (linked) order = (Array.isArray(linked) ? linked[0] : linked) as Record<string, unknown>;
+          }
+        }
+      }
+    } catch (linkFailure) {
+      console.error("[public-storefront] vínculo de conta ignorado", linkFailure instanceof Error ? linkFailure.message : "erro desconhecido");
+    }
 
     let trackingToken: string | undefined;
     if (payload.fulfillment === "delivery") {
