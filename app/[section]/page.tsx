@@ -4,6 +4,7 @@ import { ArrowLeft, Construction, Plus } from "lucide-react";
 import { notFound } from "next/navigation";
 import { CatalogManager } from "@/components/catalog-manager";
 import { CommerceManager } from "@/components/commerce-manager";
+import { DeliveryManager } from "@/components/delivery-manager";
 import { RewardsManager } from "@/components/rewards-manager";
 import { ReportsManager } from "@/components/reports-manager";
 import { LocalMigrationPanel } from "@/components/local-migration-panel";
@@ -12,6 +13,7 @@ import { getSelectedCompanyId } from "@/lib/supabase/session";
 
 const sections: Record<string, { title: string; description: string }> = {
   pedidos: { title: "Pedidos", description: "Acompanhe pedidos e status da operação." },
+  entregas: { title: "Entregas", description: "Designe motoboys e acompanhe as rotas em tempo real." },
   produtos: { title: "Produtos", description: "Organize seu catálogo, categorias e disponibilidade." },
   estoque: { title: "Estoque", description: "Visualize saldos, movimentações e alertas." },
   clientes: { title: "Clientes", description: "Centralize contatos, histórico e preferências." },
@@ -31,6 +33,7 @@ export default async function SectionPage({ params }: { params: Promise<{ sectio
   const { section } = await params;
   if (section === "produtos" || section === "estoque") { const companyId = await getSelectedCompanyId(); return <CatalogManager initialView={section === "produtos" ? "products" : "stock"} companyId={companyId ?? undefined} />; }
   if (section === "clientes" || section === "pedidos") { const companyId = await getSelectedCompanyId(); return <CommerceManager view={section === "clientes" ? "customers" : "orders"} companyId={companyId ?? undefined} />; }
+  if (section === "entregas") { const companyId = await getSelectedCompanyId(); return <DeliveryManager companyId={companyId ?? undefined} />; }
   if (section === "pagamentos" || section === "cupons-e-fidelidade") { const companyId = await getSelectedCompanyId(); return <RewardsManager initialTab={section === "pagamentos" ? "payments" : "coupons"} companyId={companyId ?? undefined} />; }
   if (section === "relatorios") { const companyId = await getSelectedCompanyId(); return <ReportsManager companyId={companyId ?? undefined} />; }
   if (section === "importacao") return <LocalMigrationPanel />;
