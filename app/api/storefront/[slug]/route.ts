@@ -45,6 +45,7 @@ function safeCheckoutMessage(message: string) {
     ["PUBLIC_STORE_CLOSED", "A loja está fechada e não está recebendo pedidos agora."],
     ["PUBLIC_STORE_EMPTY_CART", "Seu carrinho está vazio."],
     ["PUBLIC_STORE_INVALID_ITEM", "Um dos itens do carrinho é inválido."],
+    ["PUBLIC_STORE_INVALID_PIZZA", "Revise o tamanho e os sabores da pizza."],
     ["PUBLIC_STORE_PRODUCT_UNAVAILABLE", "Um dos produtos ficou indisponível. Atualize o cardápio."],
     ["PUBLIC_STORE_STOCK", "A quantidade solicitada não está mais disponível."],
     ["PUBLIC_STORE_COUPON", "Cupom inválido ou indisponível."],
@@ -73,6 +74,19 @@ function promotionPrice(profile: Record<string, unknown>, sku: string | null, ti
   return price / 100;
 }
 
+function pizzaParts(name: string, sku: string | null, isPizza: boolean) {
+  if (!isPizza) return {};
+  const match = name.match(/^(.*?)\s+-\s+(Grande|M[eé]dia|Pequena|Broto|Fam[ií]lia)$/i);
+  if (match) {
+    const rawSize = match[2];
+    const size = /^media$/i.test(rawSize) ? "Média" : /^familia$/i.test(rawSize) ? "Família" : rawSize.charAt(0).toUpperCase()+rawSize.slice(1).toLowerCase();
+    return { pizzaFlavor: match[1].trim(), pizzaSize: size };
+  }
+  if (sku?.endsWith("-G")) return { pizzaFlavor: name.replace(/\s+-\s+Grande$/i, "").trim(), pizzaSize: "Grande" };
+  if (sku?.endsWith("-M")) return { pizzaFlavor: name.replace(/\s+-\s+M[eé]dia$/i, "").trim(), pizzaSize: "Média" };
+  return { pizzaFlavor: name };
+}
+
 async function loadStore(client: SupabaseClient, slug: string): Promise<PublicStorePayload | null> {
   const { data: company, error: companyError } = await client.from("companies").select("id,name,slug,public_store_enabled,public_store_open,public_profile,timezone").eq("slug", slug).eq("public_store_enabled", true).is("deleted_at", null).maybeSingle();
   if (companyError) throw new Error(companyError.message);
@@ -92,6 +106,8 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
   const description = text(profile, "description", "Loja online");
   const deliveryFeeCents = numberValue(profile, "delivery_fee_cents", 0);
   const alcoholCategoryIds = new Set(categories.filter((row) => row.name.toLowerCase().includes("cerveja") || row.name.toLowerCase().includes("alco")).map((row) => row.id));
+  const pizzaCategoryIds = new Set(categories.filter((row) => row.name.toLocaleLowerCase("pt-BR").includes("pizza")).map((row) => row.id));
+  const halfRule = text(profile, "pizza_half_price_rule", "highest");
 
   return {
     config: {
@@ -103,14 +119,20 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
       acceptOrdersWhenClosed: bool(profile, "accept_orders_when_closed", false), openingHours: text(profile, "opening_hours", "Consulte os horários com o estabelecimento"),
       closedMessage: text(profile, "closed_message", "Estamos fechados agora. Volte no próximo horário!"), deliveryFee: Math.max(0, deliveryFeeCents) / 100,
       city: text(profile, "city", ""), state: text(profile, "state", ""), alcoholMinAge: Math.max(0, numberValue(profile, "alcohol_min_age", 0)) || undefined,
+      pizzaConfiguratorEnabled: bool(profile, "pizza_configurator_enabled", false),
+      pizzaHalfPriceRule: halfRule === "highest" ? "highest" : undefined,
     },
     categories: categories.map((row) => ({ id: row.id, name: row.name, description: row.description, displayOrder: row.display_order })),
-    products: products.map((row) => ({
-      id: row.id, categoryId: row.category_id, name: row.name, description: row.description, price: row.price_cents / 100,
-      promotionalPrice: promotionPrice(profile, row.sku, company.timezone ?? "America/Sao_Paulo") ?? (row.promotional_price_cents == null ? undefined : row.promotional_price_cents / 100),
-      imageUrl: row.image_url ?? undefined, trackStock: Boolean(row.track_stock), currentStock: Number(row.current_stock), status: row.status,
-      requiresAgeVerification: alcoholCategoryIds.has(row.category_id),
-    })),
+    products: products.map((row) => {
+      const isPizza = pizzaCategoryIds.has(row.category_id);
+      const parts = pizzaParts(row.name, row.sku, isPizza);
+      return {
+        id: row.id, categoryId: row.category_id, name: row.name, description: row.description, price: row.price_cents / 100,
+        promotionalPrice: promotionPrice(profile, row.sku, company.timezone ?? "America/Sao_Paulo") ?? (row.promotional_price_cents == null ? undefined : row.promotional_price_cents / 100),
+        imageUrl: row.image_url ?? undefined, sku: row.sku ?? undefined, trackStock: Boolean(row.track_stock), currentStock: Number(row.current_stock), status: row.status,
+        requiresAgeVerification: alcoholCategoryIds.has(row.category_id), isPizza, ...parts,
+      };
+    }),
     deliveryZones: zones.map((row) => ({ id: row.id, name: row.name, fee: Number(row.fee_cents) / 100, distanceBand: row.distance_band ?? undefined, isDefault: Boolean(row.is_default) })),
   };
 }
@@ -134,6 +156,12 @@ function parseCheckout(value: unknown): PublicCheckoutInput | null {
     if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99) return null;
     if (item.additions && (!Array.isArray(item.additions) || item.additions.length > 20 || item.additions.some((x) => typeof x !== "string" || x.length > 120))) return null;
     if (item.note != null && (typeof item.note !== "string" || item.note.length > 500)) return null;
+    if (item.configuration != null) {
+      const config = asRecord(item.configuration);
+      if (config.kind !== "pizza" || (config.mode !== "whole" && config.mode !== "half") || typeof config.size !== "string" || !config.size.trim() || config.size.length > 40) return null;
+      if (config.mode === "half" && (typeof config.secondProductId !== "string" || !uuidPattern.test(config.secondProductId))) return null;
+      if (config.mode === "whole" && config.secondProductId != null) return null;
+    }
   }
   return body as PublicCheckoutInput;
 }
@@ -212,7 +240,18 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       p_delivery_address: payload.fulfillment === "delivery" ? payload.address ?? {} : null,
       p_payment_method: payload.paymentMethod,
       p_coupon_code: couponCode || null,
-      p_items: payload.items.map((item) => ({ product_id: item.productId, quantity: item.quantity, additions: item.additions ?? [], note: item.note?.trim() || null })),
+      p_items: payload.items.map((item) => ({
+        product_id: item.productId,
+        quantity: item.quantity,
+        additions: item.additions ?? [],
+        note: item.note?.trim() || null,
+        configuration: item.configuration ? {
+          kind: item.configuration.kind,
+          mode: item.configuration.mode,
+          size: item.configuration.size.trim(),
+          ...(item.configuration.mode === "half" && item.configuration.secondProductId ? { second_product_id: item.configuration.secondProductId } : {}),
+        } : {},
+      })),
     });
     if (error) {
       console.error("[public-storefront] checkout rejeitado", error.code, error.message);
