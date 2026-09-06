@@ -79,4 +79,5 @@ export type PublicCheckoutResult = {
   paymentStatus: string;
   fulfillment: PublicFulfillmentType;
   createdAt: string;
+  trackingToken?: string;
 };
