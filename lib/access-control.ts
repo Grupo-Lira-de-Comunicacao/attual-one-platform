@@ -10,7 +10,7 @@ export const PUBLIC = [
   "/api/storefront",
 ];
 export const MEMBERSHIP_ROUTES = ["/sem-empresa", "/selecionar-empresa", "/api/company"];
-export const PLATFORM_ADMIN_ROUTES = ["/mestre"];
+export const PLATFORM_ADMIN_ROUTES = ["/mestre", "/api/platform"];
 
 export type AccessDecision = { action: "allow" } | { action: "redirect"; to: string };
 
