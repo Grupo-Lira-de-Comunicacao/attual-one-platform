@@ -112,4 +112,5 @@ export type PublicCheckoutResult = {
   fulfillment: PublicFulfillmentType;
   createdAt: string;
   trackingToken?: string;
+  requiresAgeDocument?: boolean;
 };
