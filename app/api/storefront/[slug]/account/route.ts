@@ -39,6 +39,20 @@ function cleanAddress(value: unknown): Address {
   };
 }
 
+function customerItemConfiguration(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const config = value as Record<string, unknown>;
+  if (config.kind !== "pizza" || (config.mode !== "whole" && config.mode !== "half")) return undefined;
+  const size = String(config.size ?? "").trim();
+  if (!size) return undefined;
+  if (config.mode === "half") {
+    const secondProductId = String(config.second_product_id ?? "").trim();
+    if (!secondProductId) return undefined;
+    return { kind:"pizza" as const, mode:"half" as const, size, secondProductId };
+  }
+  return { kind:"pizza" as const, mode:"whole" as const, size };
+}
+
 async function contextFor(slug: string) {
   const auth = await createSupabaseServerClient();
   const { data: userData, error: userError } = await auth.auth.getUser();
@@ -89,7 +103,7 @@ async function accountPayload(admin: ReturnType<typeof adminClient>, company: { 
 
     const ids = (orderRows ?? []).map((row) => row.id);
     const [{ data: itemRows, error: itemError }, { data: deliveryRows, error: deliveryError }] = ids.length ? await Promise.all([
-      admin.from("order_items").select("order_id,product_id,product_name,unit_price_cents,quantity,additions,note,total_cents").in("order_id", ids),
+      admin.from("order_items").select("order_id,product_id,product_name,unit_price_cents,quantity,additions,note,total_cents,configuration").in("order_id", ids),
       admin.from("deliveries").select("order_id,public_tracking_token,status").in("order_id", ids),
     ]) : [{ data: [], error: null }, { data: [], error: null }];
     if (itemError) throw itemError;
@@ -99,6 +113,7 @@ async function accountPayload(admin: ReturnType<typeof adminClient>, company: { 
     for (const item of itemRows ?? []) {
       const key = String(item.order_id);
       const list = itemsByOrder.get(key) ?? [];
+      const configuration = customerItemConfiguration(item.configuration);
       list.push({
         productId: item.product_id ? String(item.product_id) : "",
         productName: String(item.product_name),
@@ -106,6 +121,7 @@ async function accountPayload(admin: ReturnType<typeof adminClient>, company: { 
         quantity: Number(item.quantity),
         additions: Array.isArray(item.additions) ? item.additions : [],
         note: String(item.note ?? ""),
+        ...(configuration ? { configuration } : {}),
       });
       itemsByOrder.set(key, list);
     }
