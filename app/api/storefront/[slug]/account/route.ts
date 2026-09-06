@@ -174,7 +174,8 @@ async function accountPayload(admin: ReturnType<typeof adminClient>, company: { 
     if (entitlementError) throw entitlementError;
 
     coupons = (entitlementRows ?? []).map((row) => {
-      const coupon = row.coupons as Record<string, unknown> | null;
+      const embedded = row.coupons as unknown;
+      const coupon = (Array.isArray(embedded) ? embedded[0] : embedded) as Record<string, unknown> | null | undefined;
       return {
         id: String(row.id),
         source: String(row.source),
