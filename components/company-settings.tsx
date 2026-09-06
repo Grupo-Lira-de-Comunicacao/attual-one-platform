@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { DeliveryZoneSettings } from "@/components/delivery-zone-settings";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 type CompanyRow = {
@@ -98,7 +99,7 @@ export function CompanySettings({ companyId }: { companyId?: string }) {
       <div className="grid gap-5 sm:grid-cols-3">
         <label className={labelClass}>Cidade<input className={inputClass} value={form.city} onChange={(e)=>setForm(f=>({...f,city:e.target.value}))}/></label>
         <label className={labelClass}>UF<input className={inputClass} value={form.state} maxLength={2} onChange={(e)=>setForm(f=>({...f,state:e.target.value}))}/></label>
-        <label className={labelClass}>Taxa de entrega (R$)<input className={inputClass} value={form.deliveryFee} inputMode="decimal" onChange={(e)=>setForm(f=>({...f,deliveryFee:e.target.value}))}/></label>
+        <label className={labelClass}>Taxa padrão / fallback (R$)<input className={inputClass} value={form.deliveryFee} inputMode="decimal" onChange={(e)=>setForm(f=>({...f,deliveryFee:e.target.value}))}/></label>
       </div>
       <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
         <label className="flex items-center gap-3 text-sm font-semibold text-slate-700"><input type="checkbox" checked={form.storeEnabled} onChange={(e)=>setForm(f=>({...f,storeEnabled:e.target.checked}))}/> Loja pública habilitada</label>
@@ -106,5 +107,6 @@ export function CompanySettings({ companyId }: { companyId?: string }) {
       </div>
       <div className="flex flex-wrap items-center gap-4"><button className="primary-button" onClick={save} disabled={saving || !form.name.trim()}>{saving?"Salvando...":"Salvar configurações"}</button>{status && <span className="text-xs text-slate-600">{status}</span>}</div>
     </section>
+    <DeliveryZoneSettings companyId={company.id}/>
   </div>;
 }
