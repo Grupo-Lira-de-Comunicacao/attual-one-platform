@@ -66,14 +66,22 @@ async function contextFor(slug: string) {
   return { admin, company, user: userData.user, account };
 }
 
+async function ensureWelcomeCoupon(admin: ReturnType<typeof adminClient>, companyId: string, customerId?: string | null) {
+  if (!customerId) return;
+  const { error } = await admin.rpc("provision_store_welcome_coupon", { p_company: companyId, p_customer: customerId });
+  if (error) console.error("[store-customer-account] cupom de boas-vindas", error.code, error.message);
+}
+
 async function accountPayload(admin: ReturnType<typeof adminClient>, company: { id: string; name: string; slug: string }, user: { id: string; email?: string | null }, account: Record<string, unknown> | null) {
   let orders: Array<Record<string, unknown>> = [];
-  if (account?.customer_id) {
+  const customerId = account?.customer_id ? String(account.customer_id) : "";
+
+  if (customerId) {
     const { data: orderRows, error: orderError } = await admin
       .from("orders")
       .select("id,number,total_cents,status,payment_status,fulfillment,created_at,delivery_address")
       .eq("company_id", company.id)
-      .eq("customer_id", String(account.customer_id))
+      .eq("customer_id", customerId)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(30);
@@ -119,20 +127,69 @@ async function accountPayload(admin: ReturnType<typeof adminClient>, company: { 
     });
   }
 
+  const { data: ruleRow, error: ruleError } = await admin
+    .from("loyalty_rules")
+    .select("name,mode,points_per_real,reward_threshold,reward_description,reward_value_cents,reward_minimum_order_cents,reward_valid_days")
+    .eq("company_id", company.id)
+    .eq("status", "active")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (ruleError) throw ruleError;
+
   let loyalty = null;
-  if (account?.customer_id) {
+  if (customerId) {
     const { data: loyaltyRow, error: loyaltyError } = await admin
       .from("loyalty_accounts")
       .select("points,purchase_count,rewards_available")
       .eq("company_id", company.id)
-      .eq("customer_id", String(account.customer_id))
+      .eq("customer_id", customerId)
       .maybeSingle();
     if (loyaltyError) throw loyaltyError;
-    if (loyaltyRow) loyalty = {
-      points: Number(loyaltyRow.points),
-      purchaseCount: Number(loyaltyRow.purchase_count),
-      rewardsAvailable: Number(loyaltyRow.rewards_available),
+    if (loyaltyRow || ruleRow) loyalty = {
+      points: Number(loyaltyRow?.points ?? 0),
+      purchaseCount: Number(loyaltyRow?.purchase_count ?? 0),
+      rewardsAvailable: Number(loyaltyRow?.rewards_available ?? 0),
+      rule: ruleRow ? {
+        name: String(ruleRow.name),
+        mode: String(ruleRow.mode),
+        pointsPerReal: Number(ruleRow.points_per_real),
+        rewardThreshold: Number(ruleRow.reward_threshold),
+        rewardDescription: String(ruleRow.reward_description),
+        rewardValue: Number(ruleRow.reward_value_cents) / 100,
+        rewardMinimumOrder: Number(ruleRow.reward_minimum_order_cents) / 100,
+        rewardValidDays: Number(ruleRow.reward_valid_days),
+      } : null,
     };
+  }
+
+  let coupons: Array<Record<string, unknown>> = [];
+  if (customerId) {
+    const { data: entitlementRows, error: entitlementError } = await admin
+      .from("store_customer_coupon_entitlements")
+      .select("id,source,redeemed_at,coupon_id,coupons(code,description,type,value,minimum_order_cents,starts_at,expires_at,status,usage_count,usage_limit)")
+      .eq("company_id", company.id)
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false });
+    if (entitlementError) throw entitlementError;
+
+    coupons = (entitlementRows ?? []).map((row) => {
+      const coupon = row.coupons as Record<string, unknown> | null;
+      return {
+        id: String(row.id),
+        source: String(row.source),
+        redeemedAt: row.redeemed_at ? String(row.redeemed_at) : null,
+        code: String(coupon?.code ?? ""),
+        description: String(coupon?.description ?? ""),
+        type: String(coupon?.type ?? ""),
+        value: coupon?.type === "percentage" ? Number(coupon?.value ?? 0) : Number(coupon?.value ?? 0) / 100,
+        minimumOrder: Number(coupon?.minimum_order_cents ?? 0) / 100,
+        startsAt: String(coupon?.starts_at ?? ""),
+        expiresAt: String(coupon?.expires_at ?? ""),
+        status: String(coupon?.status ?? "inactive"),
+        used: Boolean(row.redeemed_at) || Number(coupon?.usage_count ?? 0) >= Number(coupon?.usage_limit ?? Number.MAX_SAFE_INTEGER),
+      };
+    });
   }
 
   return {
@@ -145,6 +202,7 @@ async function accountPayload(admin: ReturnType<typeof adminClient>, company: { 
     },
     orders,
     loyalty,
+    coupons,
   };
 }
 
@@ -167,6 +225,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sl
       account = data;
     }
 
+    await ensureWelcomeCoupon(ctx.admin, ctx.company.id, account?.customer_id ? String(account.customer_id) : null);
     return NextResponse.json(await accountPayload(ctx.admin, ctx.company, ctx.user, account));
   } catch (error) {
     console.error("[store-customer-account] GET", error instanceof Error ? error.message : "erro desconhecido");
@@ -216,10 +275,35 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ slu
     }, { onConflict: "company_id,auth_user_id" }).select("id,company_id,auth_user_id,customer_id,email,name,phone,address,created_at,updated_at").single();
     if (accountError) throw accountError;
 
+    await ensureWelcomeCoupon(ctx.admin, ctx.company.id, customerId);
     return NextResponse.json(await accountPayload(ctx.admin, ctx.company, ctx.user, account));
   } catch (error) {
     console.error("[store-customer-account] PUT", error instanceof Error ? error.message : "erro desconhecido");
     return NextResponse.json({ error: "Não foi possível salvar sua conta." }, { status: 503 });
+  }
+}
+
+export async function POST(_request: NextRequest, context: { params: Promise<{ slug: string }> }) {
+  const { slug } = await context.params;
+  if (!slugPattern.test(slug)) return NextResponse.json({ error: "Loja inválida." }, { status: 400 });
+  try {
+    const ctx = await contextFor(slug);
+    if ("unauthorized" in ctx) return NextResponse.json({ error: "Entre na sua conta para resgatar um prêmio." }, { status: 401 });
+    if ("notFound" in ctx) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
+    const customerId = ctx.account?.customer_id ? String(ctx.account.customer_id) : "";
+    if (!customerId) return NextResponse.json({ error: "Complete seu nome e telefone antes de resgatar." }, { status: 409 });
+
+    const { error } = await ctx.admin.rpc("redeem_store_customer_reward", { p_company: ctx.company.id, p_customer: customerId });
+    if (error) {
+      const message = error.message.includes("STORE_REWARD_UNAVAILABLE") ? "Você ainda não tem prêmio disponível para resgate." : "Não foi possível resgatar o prêmio agora.";
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+
+    await ensureWelcomeCoupon(ctx.admin, ctx.company.id, customerId);
+    return NextResponse.json(await accountPayload(ctx.admin, ctx.company, ctx.user, ctx.account));
+  } catch (error) {
+    console.error("[store-customer-account] POST", error instanceof Error ? error.message : "erro desconhecido");
+    return NextResponse.json({ error: "Não foi possível resgatar seu prêmio." }, { status: 503 });
   }
 }
 
