@@ -25,7 +25,10 @@ export function MatrixIdentityBridge({ slug }: { slug: string }) {
     }
   }
 
-  useEffect(() => { void load(); }, [slug]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [slug]);
 
   async function generateCode() {
     setBusy(true);
