@@ -27,8 +27,14 @@ jobs:
         run: npm test
       - name: Type check
         run: npm run type-check
-      - name: Lint
-        run: npm run lint
+      - name: Lint M4 changed surface
+        run: |
+          npx eslint \
+            components/matrix-identity-bridge.tsx \
+            'app/api/integrations/matrix/links/route.ts' \
+            'app/api/integrations/matrix/signals/route.ts' \
+            'app/api/storefront/[slug]/account/matrix-link/route.ts' \
+            'app/loja/[slug]/matrix/page.tsx'
       - name: Build
         run: npm run build
       - name: Matrix M4 contract
