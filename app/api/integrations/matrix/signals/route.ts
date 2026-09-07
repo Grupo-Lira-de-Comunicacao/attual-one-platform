@@ -110,6 +110,23 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const link = await supabase
+    .from("matrix_person_links")
+    .select("status,customer_id")
+    .eq("matrix_person_id", body.matrix_person_id)
+    .maybeSingle();
+  if (link.error) {
+    console.error("[matrix-signals] explicit link lookup failed", link.error);
+    return NextResponse.json({ error: "Falha de persistência." }, { status: 500 });
+  }
+
+  const linkedCustomerId = link.data?.status === "linked" && link.data.customer_id ? String(link.data.customer_id) : null;
+  const processingStatus = link.data?.status === "revoked" || link.data?.status === "suppressed"
+    ? "suppressed"
+    : linkedCustomerId
+      ? "linked"
+      : "unlinked";
+
   const inserted = await supabase
     .from("matrix_signal_inbox")
     .insert({
@@ -126,7 +143,8 @@ export async function POST(request: NextRequest) {
       source_system: "matrix-attual",
       target_system: "attual-one",
       occurred_at: body.occurred_at,
-      processing_status: "unlinked",
+      processing_status: processingStatus,
+      linked_customer_id: linkedCustomerId,
       payload: {
         topic_key: body.topic_key,
         score: body.score,
@@ -135,7 +153,7 @@ export async function POST(request: NextRequest) {
         policy_version: body.policy_version,
       },
     })
-    .select("id,received_at,processing_status")
+    .select("id,received_at,processing_status,linked_customer_id")
     .single();
 
   if (inserted.error || !inserted.data) {
@@ -152,7 +170,7 @@ export async function POST(request: NextRequest) {
     signal_key: body.signal_key,
     processing_status: inserted.data.processing_status,
     received_at: inserted.data.received_at,
-    linked_customer: false,
+    linked_customer: Boolean(inserted.data.linked_customer_id),
     marketing_enabled: false,
     external_action_enabled: false,
   }, { status: 201 });
