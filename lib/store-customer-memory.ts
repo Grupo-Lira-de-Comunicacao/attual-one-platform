@@ -30,10 +30,19 @@ export type StoredCustomerOrder = {
   number: number;
   total: number;
   status: string;
+  paymentStatus?: string;
   fulfillment: PublicCheckoutResult["fulfillment"];
   createdAt: string;
+  updatedAt?: string;
   trackingToken?: string;
   items: StoredOrderItem[];
+};
+
+export type StoredCustomerOrderStatus = {
+  id: string;
+  status: string;
+  paymentStatus?: string;
+  updatedAt?: string;
 };
 
 const profileKey = (slug: string) => `attual-one:store:${slug}:profile:v1`;
@@ -73,4 +82,28 @@ export function rememberCustomerOrder(slug: string, order: StoredCustomerOrder) 
   if (typeof window === "undefined") return;
   const current = loadStoredCustomerOrders(slug).filter((item) => item.id !== order.id);
   window.localStorage.setItem(ordersKey(slug), JSON.stringify([order, ...current].slice(0, 20)));
+}
+
+
+export function mergeStoredCustomerOrderStatuses(
+  orders: StoredCustomerOrder[],
+  updates: StoredCustomerOrderStatus[],
+): StoredCustomerOrder[] {
+  const byId = new Map(updates.map((update) => [update.id, update]));
+  return orders.map((order) => {
+    const update = byId.get(order.id);
+    if (!update) return order;
+    return {
+      ...order,
+      status: update.status,
+      paymentStatus: update.paymentStatus ?? order.paymentStatus,
+      updatedAt: update.updatedAt ?? order.updatedAt,
+    };
+  });
+}
+
+export function updateStoredCustomerOrderStatuses(slug: string, updates: StoredCustomerOrderStatus[]) {
+  if (typeof window === "undefined" || updates.length === 0) return;
+  const current = loadStoredCustomerOrders(slug);
+  window.localStorage.setItem(ordersKey(slug), JSON.stringify(mergeStoredCustomerOrderStatuses(current, updates).slice(0, 20)));
 }
