@@ -7,13 +7,33 @@ import {
   loadStoredCustomerOrders,
   loadStoreCustomerProfile,
   saveStoreCustomerProfile,
+  updateStoredCustomerOrderStatuses,
   type StoreCustomerProfile,
   type StoredCustomerOrder,
+  type StoredCustomerOrderStatus,
   type StoredOrderItem,
 } from "@/lib/store-customer-memory";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const emptyProfile: StoreCustomerProfile = { name:"", phone:"", address:{ street:"", number:"", complement:"", district:"", city:"", postalCode:"" } };
+const orderStatusLabels: Record<string,string> = {
+  new:"Novo",
+  confirmed:"Confirmado",
+  preparing:"Em preparação",
+  ready:"Pronto",
+  out_for_delivery:"Saiu para entrega",
+  completed:"Concluído",
+  cancelled:"Cancelado",
+};
+const orderStatusClasses: Record<string,string> = {
+  new:"bg-slate-100 text-slate-700",
+  confirmed:"bg-blue-100 text-blue-800",
+  preparing:"bg-amber-100 text-amber-900",
+  ready:"bg-emerald-100 text-emerald-800",
+  out_for_delivery:"bg-indigo-100 text-indigo-800",
+  completed:"bg-green-100 text-green-800",
+  cancelled:"bg-rose-100 text-rose-800",
+};
 
 type CloudOrder = StoredCustomerOrder & { paymentStatus?: string };
 type LoyaltyRule = {
@@ -65,6 +85,27 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
     setOrders(loadStoredCustomerOrders(slug));
   };
 
+  async function refreshLocalOrderStatuses() {
+    const local = loadStoredCustomerOrders(slug);
+    const orderIds = local.map((order) => order.id).filter(Boolean).slice(0, 20);
+    if (!orderIds.length) return;
+    try {
+      const response = await fetch(`/api/storefront/${encodeURIComponent(slug)}/orders/status`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ orderIds }),
+        cache:"no-store",
+      });
+      if (!response.ok) return;
+      const body = await response.json() as { orders?: StoredCustomerOrderStatus[] };
+      const updates = Array.isArray(body.orders) ? body.orders : [];
+      updateStoredCustomerOrderStatuses(slug, updates);
+      setOrders(loadStoredCustomerOrders(slug));
+    } catch {
+      // Atualização de status é best-effort; o pedido local continua disponível offline.
+    }
+  }
+
   async function refreshCloud() {
     try {
       const response = await fetch(`/api/storefront/${encodeURIComponent(slug)}/account`, { cache:"no-store" });
@@ -91,10 +132,30 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
   useEffect(() => {
     refreshLocal();
     void refreshCloud();
-    const listener = () => { refreshLocal(); void refreshCloud(); };
+    void refreshLocalOrderStatuses();
+    const listener = () => { refreshLocal(); void refreshCloud(); void refreshLocalOrderStatuses(); };
     window.addEventListener("attual-one:customer-memory-updated", listener);
     return () => window.removeEventListener("attual-one:customer-memory-updated", listener);
   }, [slug]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const refresh = () => {
+      if (cancelled || document.visibilityState === "hidden") return;
+      void refreshCloud();
+      void refreshLocalOrderStatuses();
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 8000);
+    const onVisibility = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [open, slug]);
 
   async function sendMagicLink() {
     const clean = email.trim().toLowerCase();
@@ -176,7 +237,12 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
 
   const address = profile.address;
   const setAddress = (key: keyof StoreCustomerProfile["address"], value: string) => setProfile((current) => ({ ...current, address:{ ...current.address, [key]:value } }));
-  const visibleOrders = cloud?.orders?.length ? cloud.orders : orders;
+  const visibleOrders = useMemo(() => {
+    const merged = new Map<string, StoredCustomerOrder>();
+    for (const order of orders) merged.set(order.id, order);
+    for (const order of cloud?.orders ?? []) merged.set(order.id, order);
+    return Array.from(merged.values()).sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  }, [cloud?.orders, orders]);
   const loyalty = cloud?.loyalty ?? null;
   const threshold = loyalty?.rule?.rewardThreshold ?? 0;
   const cycleProgress = threshold > 0 ? loyalty!.purchaseCount % threshold : 0;
@@ -185,7 +251,7 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
   const activeCoupons = useMemo(() => (cloud?.coupons ?? []).filter((coupon) => !coupon.used && coupon.status === "active" && (!coupon.expiresAt || new Date(coupon.expiresAt).getTime() > Date.now())), [cloud]);
 
   return <>
-    <button type="button" onClick={()=>{refreshLocal();void refreshCloud();setOpen(true);}} className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-xl" aria-label="Abrir minha conta"><UserRound size={17}/> Minha conta</button>
+    <button type="button" onClick={()=>{refreshLocal();void refreshCloud();void refreshLocalOrderStatuses();setOpen(true);}} className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-xl" aria-label="Abrir minha conta"><UserRound size={17}/> Minha conta</button>
     {open && <div className="store-overlay">
       <aside className="cart-drawer" role="dialog" aria-modal="true" aria-label="Minha conta">
         <header><div><p className="eyebrow">MINHA CONTA</p><h2>Perfil, fidelidade e pedidos</h2></div><button onClick={()=>setOpen(false)} aria-label="Fechar"><X /></button></header>
@@ -236,8 +302,9 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
           </section>
 
           <section className="border-t border-slate-100 py-5">
-            <div className="mb-3 flex items-center gap-2"><ShoppingBag size={18}/><strong>Meus pedidos</strong></div>
-            {visibleOrders.length===0?<p className="text-sm text-slate-500">Seus próximos pedidos aparecerão aqui{cloud?" na sua conta.":" neste aparelho."}</p>:<div className="grid gap-3">{visibleOrders.map((order)=><article key={order.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><strong>Pedido #{order.number}</strong><small className="mt-1 block text-slate-500">{new Date(order.createdAt).toLocaleString("pt-BR")}</small></div><strong>{money.format(order.total)}</strong></div><p className="mt-3 text-xs text-slate-600">{order.items.map((item)=>`${item.quantity}x ${item.productName}`).join(", ")}</p><div className="mt-3 grid gap-2">{order.fulfillment==="delivery"&&order.trackingToken&&<a className="outline-button justify-center" href={`/loja/${encodeURIComponent(slug)}/rastreamento/${encodeURIComponent(order.trackingToken)}`}>Acompanhar entrega <ChevronRight size={15}/></a>}<button className="outline-button justify-center" onClick={()=>reorder(order)}><RotateCcw size={15}/> Pedir novamente</button></div></article>)}</div>}
+            <div className="mb-1 flex items-center gap-2"><ShoppingBag size={18}/><strong>Meus pedidos</strong></div>
+            {visibleOrders.length>0&&<p className="mb-3 text-xs text-slate-500">O status é atualizado automaticamente enquanto esta tela estiver aberta.</p>}
+            {visibleOrders.length===0?<p className="text-sm text-slate-500">Seus próximos pedidos aparecerão aqui{cloud?" na sua conta.":" neste aparelho."}</p>:<div className="grid gap-3">{visibleOrders.map((order)=><article key={order.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><strong>Pedido #{order.number}</strong><small className="mt-1 block text-slate-500">{new Date(order.createdAt).toLocaleString("pt-BR")}</small></div><strong>{money.format(order.total)}</strong></div><div className="mt-3 flex items-center justify-between gap-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${orderStatusClasses[order.status]??"bg-slate-100 text-slate-700"}`}>{orderStatusLabels[order.status]??order.status}</span>{order.paymentStatus&&<small className="text-xs text-slate-500">Pagamento: {order.paymentStatus==="paid"?"Pago":order.paymentStatus==="refunded"?"Estornado":order.paymentStatus==="partial"?"Parcial":"Pendente"}</small>}</div><p className="mt-3 text-xs text-slate-600">{order.items.map((item)=>`${item.quantity}x ${item.productName}`).join(", ")}</p><div className="mt-3 grid gap-2">{order.fulfillment==="delivery"&&order.trackingToken&&<a className="outline-button justify-center" href={`/loja/${encodeURIComponent(slug)}/rastreamento/${encodeURIComponent(order.trackingToken)}`}>Acompanhar entrega <ChevronRight size={15}/></a>}<button className="outline-button justify-center" onClick={()=>reorder(order)}><RotateCcw size={15}/> Pedir novamente</button></div></article>)}</div>}
           </section>
           {message && <p className="pb-5 text-xs text-slate-600" role="status">{message}</p>}
         </div>

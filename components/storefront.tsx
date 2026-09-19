@@ -191,7 +191,7 @@ function CheckoutModal({slug,store,cart,subtotal,initialCoupon,onClose,onConfirm
       const body=await response.json() as {order?:PublicCheckoutResult;error?:string};
       if(!response.ok||!body.order)throw new Error(body.error||"Não foi possível concluir o pedido.");
       if(identified){saveStoreCustomerProfile(slug,{name:name.trim(),phone:phone.trim(),address:{...address}});}
-      rememberCustomerOrder(slug,{id:body.order.id,number:body.order.number,total:body.order.total,status:body.order.status,fulfillment:body.order.fulfillment,createdAt:body.order.createdAt,trackingToken:body.order.trackingToken,items:cart.map((item)=>({...item,additions:[...item.additions]}))});
+      rememberCustomerOrder(slug,{id:body.order.id,number:body.order.number,total:body.order.total,status:body.order.status,paymentStatus:body.order.paymentStatus,fulfillment:body.order.fulfillment,createdAt:body.order.createdAt,trackingToken:body.order.trackingToken,items:cart.map((item)=>({...item,additions:[...item.additions]}))});
       onConfirmed(body.order);
     }catch(requestError){setError(requestError instanceof Error?requestError.message:"Não foi possível concluir o pedido.");setSending(false);}
   }
