@@ -175,6 +175,32 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
     } finally { setBusy(false); }
   }
 
+  async function claimLocalOrders() {
+    if (!cloud) { setMessage("Entre na sua conta antes de vincular pedidos."); return; }
+    const local = loadStoredCustomerOrders(slug);
+    const cloudIds = new Set((cloud.orders ?? []).map((order) => order.id));
+    const orderIds = local.map((order) => order.id).filter((id) => id && !cloudIds.has(id)).slice(0, 20);
+    if (!orderIds.length) { setMessage("Não há pedidos deste aparelho pendentes de vínculo."); return; }
+
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch(`/api/storefront/${encodeURIComponent(slug)}/account/orders/claim`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ orderIds }),
+      });
+      const body = await response.json() as { linked?:number; error?:string };
+      if (!response.ok) throw new Error(body.error || "Não foi possível vincular os pedidos.");
+      const linked = Number(body.linked ?? 0);
+      await refreshCloud();
+      setMessage(linked > 0
+        ? `${linked} pedido(s) deste aparelho vinculado(s) à sua conta. Agora eles aparecem nos outros dispositivos após você entrar com o mesmo e-mail.`
+        : "Nenhum pedido foi vinculado. Confirme se o telefone salvo na conta é o mesmo usado no checkout.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível vincular os pedidos.");
+    } finally { setBusy(false); }
+  }
+
   async function save() {
     saveStoreCustomerProfile(slug, profile);
     setSaved(true);
@@ -243,6 +269,11 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
     for (const order of cloud?.orders ?? []) merged.set(order.id, order);
     return Array.from(merged.values()).sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }, [cloud?.orders, orders]);
+  const localOrdersPendingClaim = useMemo(() => {
+    if (!cloud) return 0;
+    const cloudIds = new Set((cloud.orders ?? []).map((order) => order.id));
+    return orders.filter((order) => !cloudIds.has(order.id)).length;
+  }, [cloud, orders]);
   const loyalty = cloud?.loyalty ?? null;
   const threshold = loyalty?.rule?.rewardThreshold ?? 0;
   const cycleProgress = threshold > 0 ? loyalty!.purchaseCount % threshold : 0;
@@ -303,6 +334,7 @@ export function StoreCustomerAccount({ slug }: { slug: string }) {
 
           <section className="border-t border-slate-100 py-5">
             <div className="mb-1 flex items-center gap-2"><ShoppingBag size={18}/><strong>Meus pedidos</strong></div>
+            {cloud&&localOrdersPendingClaim>0&&<div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3"><strong className="text-sm text-blue-950">Levar pedidos deste aparelho para minha conta</strong><p className="mt-1 text-xs leading-5 text-blue-900">Você tem {localOrdersPendingClaim} pedido(s) salvo(s) apenas neste navegador. O vínculo é explícito e só acontece quando o telefone do pedido coincide com o telefone salvo na sua conta.</p><button className="store-primary mt-3 w-full" disabled={busy} onClick={()=>void claimLocalOrders()}>{busy?"Vinculando...":"Vincular pedidos deste aparelho à minha conta"}</button></div>}
             {visibleOrders.length>0&&<p className="mb-3 text-xs text-slate-500">O status é atualizado automaticamente enquanto esta tela estiver aberta.</p>}
             {visibleOrders.length===0?<p className="text-sm text-slate-500">Seus próximos pedidos aparecerão aqui{cloud?" na sua conta.":" neste aparelho."}</p>:<div className="grid gap-3">{visibleOrders.map((order)=><article key={order.id} className="rounded-xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><strong>Pedido #{order.number}</strong><small className="mt-1 block text-slate-500">{new Date(order.createdAt).toLocaleString("pt-BR")}</small></div><strong>{money.format(order.total)}</strong></div><div className="mt-3 flex items-center justify-between gap-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${orderStatusClasses[order.status]??"bg-slate-100 text-slate-700"}`}>{orderStatusLabels[order.status]??order.status}</span>{order.paymentStatus&&<small className="text-xs text-slate-500">Pagamento: {order.paymentStatus==="paid"?"Pago":order.paymentStatus==="refunded"?"Estornado":order.paymentStatus==="partial"?"Parcial":"Pendente"}</small>}</div><p className="mt-3 text-xs text-slate-600">{order.items.map((item)=>`${item.quantity}x ${item.productName}`).join(", ")}</p><div className="mt-3 grid gap-2">{order.fulfillment==="delivery"&&order.trackingToken&&<a className="outline-button justify-center" href={`/loja/${encodeURIComponent(slug)}/rastreamento/${encodeURIComponent(order.trackingToken)}`}>Acompanhar entrega <ChevronRight size={15}/></a>}<button className="outline-button justify-center" onClick={()=>reorder(order)}><RotateCcw size={15}/> Pedir novamente</button></div></article>)}</div>}
           </section>
