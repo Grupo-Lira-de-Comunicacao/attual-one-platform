@@ -8,6 +8,7 @@ export const PUBLIC = [
   "/auth",
   "/api/auth/logout",
   "/api/integrations/casting/events",
+  "/api/integrations/matrix",
   "/api/storefront",
   "/api/delivery",
 ];
