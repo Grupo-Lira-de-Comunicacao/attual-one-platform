@@ -34,6 +34,14 @@ test("receptor Casting permanece público no proxy e protegido pelo Bearer secre
   assert.deepEqual(decision, { action: "allow" });
 });
 
+
+test("receptores Matrix permanecem públicos no proxy e protegidos pelo Bearer secret das próprias rotas", () => {
+  for (const pathname of ["/api/integrations/matrix/links", "/api/integrations/matrix/signals"]) {
+    const decision = resolveAccessDecision({ pathname, user: null, memberships: null, selectedCompanyId: null, isPlatformAdmin: false });
+    assert.deepEqual(decision, { action: "allow" });
+  }
+});
+
 test("usuário autenticado com empresa selecionada e vínculo ativo acessa normalmente", () => {
   const decision = resolveAccessDecision({ pathname: "/pedidos", user: authenticated, memberships: ownMembership, selectedCompanyId: "company-1", isPlatformAdmin: false });
   assert.deepEqual(decision, { action: "allow" });
