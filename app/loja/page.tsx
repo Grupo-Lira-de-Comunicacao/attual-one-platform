@@ -1,16 +1,71 @@
-import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
+import { PublicStoreDirectory, type PublicStoreDirectoryItem } from "@/components/public-store-directory";
+import { requireSupabasePublicConfig } from "@/lib/supabase/config";
 
-export default function StoreIndexPage() {
-  return (
-    <main className="grid min-h-screen place-items-center bg-slate-100 px-5 py-12">
-      <section className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-8 shadow-sm sm:p-10">
-        <div className="mb-8 flex items-center gap-3 text-sm font-black tracking-[0.16em] text-slate-900"><span className="grid h-10 w-10 place-items-center rounded-xl border-2 border-slate-900"><span className="h-3 w-3 rounded bg-sky-500" /></span> ATTUAL ONE</div>
-        <p className="mb-3 text-xs font-black tracking-[0.2em] text-sky-600">LOJA DIGITAL</p>
-        <h1 className="text-3xl font-black tracking-tight text-slate-900">Acesse a loja pelo endereço da empresa.</h1>
-        <p className="mt-5 text-sm leading-6 text-slate-600">Cada negócio no Attual One possui um endereço exclusivo no formato <strong className="text-slate-800">loja.attualone.com.br/nome-da-empresa</strong>.</p>
-        <p className="mt-3 text-sm leading-6 text-slate-600">Use o link enviado pelo estabelecimento ou digite o endereço completo no navegador.</p>
-        <Link className="mt-7 inline-flex rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-extrabold text-slate-700 transition hover:bg-slate-50" href="https://attualone.com.br">Conhecer o Attual One</Link>
-      </section>
-    </main>
-  );
+export const dynamic = "force-dynamic";
+
+function cleanProfile(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function profileText(profile: Record<string, unknown>, key: string): string {
+  const value = profile[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function initials(name: string, configured: string): string {
+  if (configured) return configured.slice(0, 4).toUpperCase();
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.slice(0, 1))
+    .join("")
+    .toUpperCase() || "AO";
+}
+
+async function loadPublicStores(): Promise<PublicStoreDirectoryItem[]> {
+  const config = requireSupabasePublicConfig();
+  const client = createClient(config.url, config.publishableKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data, error } = await client
+    .from("companies")
+    .select("name,slug,public_store_open,public_profile")
+    .eq("public_store_enabled", true)
+    .is("deleted_at", null)
+    .order("name", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((row) => {
+    const profile = cleanProfile(row.public_profile);
+    const name = String(row.name ?? "").trim();
+    return {
+      name,
+      slug: String(row.slug ?? "").trim(),
+      open: Boolean(row.public_store_open),
+      city: profileText(profile, "city"),
+      state: profileText(profile, "state"),
+      tagline: profileText(profile, "tagline") || profileText(profile, "description"),
+      logoText: initials(name, profileText(profile, "logo_text")),
+    };
+  }).filter((store) => store.name && store.slug);
+}
+
+export default async function StoreIndexPage() {
+  let stores: PublicStoreDirectoryItem[] = [];
+  let unavailable = false;
+
+  try {
+    stores = await loadPublicStores();
+  } catch (error) {
+    console.error("[public-store-directory] falha ao carregar lojas", error instanceof Error ? error.message : "erro desconhecido");
+    unavailable = true;
+  }
+
+  return <PublicStoreDirectory stores={stores} unavailable={unavailable} />;
 }
