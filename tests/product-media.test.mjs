@@ -32,3 +32,27 @@ test("builds media path scoped by company and kind", () => {
     "11111111-1111-4111-8111-111111111111/products/video/22222222-2222-4222-8222-222222222222.mp4",
   );
 });
+
+
+test("normalizes extension from MIME type instead of trusting the file name", () => {
+  assert.equal(
+    productMediaObjectPath(
+      "11111111-1111-4111-8111-111111111111",
+      "image",
+      "produto.exe",
+      "image/jpeg",
+      "22222222-2222-4222-8222-222222222222",
+    ),
+    "11111111-1111-4111-8111-111111111111/products/image/22222222-2222-4222-8222-222222222222.jpg",
+  );
+  assert.equal(
+    productMediaObjectPath(
+      "11111111-1111-4111-8111-111111111111",
+      "video",
+      "produto.mp4",
+      "video/quicktime",
+      "33333333-3333-4333-8333-333333333333",
+    ),
+    "11111111-1111-4111-8111-111111111111/products/video/33333333-3333-4333-8333-333333333333.mov",
+  );
+});
