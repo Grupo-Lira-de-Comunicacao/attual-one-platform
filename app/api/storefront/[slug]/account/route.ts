@@ -231,19 +231,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sl
     if ("unauthorized" in ctx) return NextResponse.json({ authenticated: false }, { status: 401 });
     if ("notFound" in ctx) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
 
-    let account = ctx.account;
-    if (!account) {
-      const { data, error } = await ctx.admin.from("store_customer_accounts").insert({
-        company_id: ctx.company.id,
-        auth_user_id: ctx.user.id,
-        email: ctx.user.email ?? null,
-      }).select("id,company_id,auth_user_id,customer_id,email,name,phone,address,created_at,updated_at").single();
-      if (error) throw error;
-      account = data;
-    }
-
-    await ensureWelcomeCoupon(ctx.admin, ctx.company.id, account?.customer_id ? String(account.customer_id) : null);
-    return NextResponse.json(await accountPayload(ctx.admin, ctx.company, ctx.user, account));
+    return NextResponse.json(await accountPayload(ctx.admin, ctx.company, ctx.user, ctx.account));
   } catch (error) {
     console.error("[store-customer-account] GET", error instanceof Error ? error.message : "erro desconhecido");
     return NextResponse.json({ error: "Não foi possível carregar sua conta." }, { status: 503 });
@@ -254,7 +242,15 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ slu
   const { slug } = await context.params;
   if (!slugPattern.test(slug)) return NextResponse.json({ error: "Loja inválida." }, { status: 400 });
   let body: Record<string, unknown>;
-  try { body = await request.json() as Record<string, unknown>; } catch { return NextResponse.json({ error: "Dados inválidos." }, { status: 400 }); }
+  try {
+    const parsed = await request.json() as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+    }
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+  }
 
   const name = cleanText(body.name, 160);
   const phone = cleanText(body.phone, 40);
@@ -266,31 +262,19 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ slu
     if ("unauthorized" in ctx) return NextResponse.json({ error: "Entre na sua conta para salvar os dados." }, { status: 401 });
     if ("notFound" in ctx) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
 
-    let customerId = ctx.account?.customer_id ? String(ctx.account.customer_id) : "";
-    if (customerId) {
-      const { error } = await ctx.admin.from("customers").update({
-        name, phone, email: ctx.user.email ?? null, address, status: "active", updated_at: new Date().toISOString(),
-      }).eq("id", customerId).eq("company_id", ctx.company.id);
-      if (error) throw error;
-    } else {
-      const { data: customer, error } = await ctx.admin.from("customers").insert({
-        company_id: ctx.company.id, name, phone, email: ctx.user.email ?? null, address, status: "active",
-      }).select("id").single();
-      if (error) throw error;
-      customerId = String(customer.id);
-    }
-
-    const { data: account, error: accountError } = await ctx.admin.from("store_customer_accounts").upsert({
-      company_id: ctx.company.id,
-      auth_user_id: ctx.user.id,
-      customer_id: customerId,
-      email: ctx.user.email ?? null,
-      name,
-      phone,
-      address,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "company_id,auth_user_id" }).select("id,company_id,auth_user_id,customer_id,email,name,phone,address,created_at,updated_at").single();
-    if (accountError) throw accountError;
+    const { data: profileResult, error: profileError } = await ctx.admin.rpc("upsert_store_customer_profile", {
+      p_company: ctx.company.id,
+      p_auth_user: ctx.user.id,
+      p_email: ctx.user.email ?? null,
+      p_name: name,
+      p_phone: phone,
+      p_address: address,
+    });
+    if (profileError) throw profileError;
+    const rawAccount = Array.isArray(profileResult) ? profileResult[0] : profileResult;
+    const account = rawAccount && typeof rawAccount === "object" ? rawAccount as Record<string, unknown> : null;
+    const customerId = account?.customer_id ? String(account.customer_id) : "";
+    if (!account || !customerId) throw new Error("Perfil não retornou conta e cliente vinculados.");
 
     await ensureWelcomeCoupon(ctx.admin, ctx.company.id, customerId);
     return NextResponse.json(await accountPayload(ctx.admin, ctx.company, ctx.user, account));
