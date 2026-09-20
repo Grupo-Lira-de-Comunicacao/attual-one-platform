@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Boxes, ChevronDown, Edit3, Package, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Boxes, ChevronDown, Edit3, Film, Package, Plus, Search, Trash2, UploadCloud, X } from "lucide-react";
 import { createRepositories } from "@/lib/repositories/factory";
 import type { CatalogRepository } from "@/lib/repositories/contracts";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { CatalogState, Category, CategoryInput, Product, ProductInput, StockMovementType } from "@/lib/catalog-types";
+import { PRODUCT_MEDIA_BUCKET, productMediaObjectPath, validateProductMedia, type ProductMediaKind } from "@/lib/product-media";
 
 type View = "products" | "categories" | "stock";
 type Notice = { type: "success" | "error"; text: string } | null;
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const emptyProduct = (categoryId = ""): ProductInput => ({ name: "", description: "", categoryId, price: 0, imageUrl: "", sku: "", trackStock: true, currentStock: 0, minimumStock: 0, status: "available" });
+const emptyProduct = (categoryId = ""): ProductInput => ({ name: "", description: "", categoryId, price: 0, imageUrl: "", videoUrl: "", sku: "", trackStock: true, currentStock: 0, minimumStock: 0, status: "available" });
 
 export function CatalogManager({ initialView, companyId }: { initialView: View; companyId?: string }) {
   const [state, setState] = useState<CatalogState | null>(null);
@@ -49,7 +50,7 @@ export function CatalogManager({ initialView, companyId }: { initialView: View; 
   const lowCount = state.products.filter(p => p.trackStock && p.currentStock <= p.minimumStock).length;
   const title = view === "products" ? "Produtos" : view === "categories" ? "Categorias" : "Estoque";
 
-  const openProduct = (product?: Product) => { setEditingProduct(product?.id ?? null); setProductForm(product ? { categoryId: product.categoryId, name: product.name, description: product.description, price: product.price, promotionalPrice: product.promotionalPrice, imageUrl: product.imageUrl, sku: product.sku, trackStock: product.trackStock, currentStock: product.currentStock, minimumStock: product.minimumStock, status: product.status } : emptyProduct(state.categories[0]?.id)); };
+  const openProduct = (product?: Product) => { setEditingProduct(product?.id ?? null); setProductForm(product ? { categoryId: product.categoryId, name: product.name, description: product.description, price: product.price, promotionalPrice: product.promotionalPrice, imageUrl: product.imageUrl, videoUrl: product.videoUrl, sku: product.sku, trackStock: product.trackStock, currentStock: product.currentStock, minimumStock: product.minimumStock, status: product.status } : emptyProduct(state.categories[0]?.id)); };
   const saveProduct = async () => { if (!productForm) return; const ok = await act(() => editingProduct ? repo().updateProduct(editingProduct, productForm) : repo().createProduct(productForm), editingProduct ? "Produto atualizado com sucesso." : "Produto criado com sucesso."); if (ok) setProductForm(null); };
   const saveCategory = async () => { if (!categoryForm) return; const ok = await act(() => editingCategory ? repo().updateCategory(editingCategory, categoryForm) : repo().createCategory(categoryForm), editingCategory ? "Categoria atualizada com sucesso." : "Categoria criada com sucesso."); if (ok) setCategoryForm(null); };
   const removeProduct = async (product: Product) => { if (window.confirm(`Excluir “${product.name}”? Esta ação também remove seu histórico de estoque.`)) await act(() => repo().deleteProduct(product.id), "Produto excluído."); };
@@ -69,7 +70,7 @@ export function CatalogManager({ initialView, companyId }: { initialView: View; 
 
     {view === "stock" && <><div className="stock-summary"><article><span>Itens controlados</span><strong>{state.products.filter(p=>p.trackStock).length}</strong></article><article><span>Estoque baixo</span><strong className="orange-text">{lowCount}</strong></article><article><span>Produtos esgotados</span><strong className="red-text">{state.products.filter(p=>p.status === "out_of_stock").length}</strong></article><article><span>Movimentações</span><strong>{state.movements.length}</strong></article></div><div className="catalog-table-wrap"><table className="catalog-table stock-table"><thead><tr><th>Produto</th><th>Saldo atual</th><th>Mínimo</th><th>Situação</th><th>Última movimentação</th><th></th></tr></thead><tbody>{state.products.filter(p=>p.trackStock).map(product => { const last = state.movements.find(m=>m.productId===product.id); const low = product.currentStock <= product.minimumStock; return <tr key={product.id}><td><div className="product-cell"><span className="catalog-product-image"><Package/></span><span><strong>{product.name}</strong><small>{product.sku}</small></span></div></td><td><strong>{product.currentStock} un.</strong></td><td>{product.minimumStock} un.</td><td>{low ? <span className="low-label visible"><AlertTriangle size={13}/> {product.currentStock === 0 ? "Esgotado" : "Estoque baixo"}</span> : <span className="ok-label">Normal</span>}</td><td>{last ? <><strong className="movement-reason">{last.reason}</strong><small className="movement-date">{new Date(last.createdAt).toLocaleString("pt-BR")}</small></> : <span className="muted">Sem movimentação</span>}</td><td><button className="outline-button" onClick={()=>setMovementProduct(product)}>Movimentar</button></td></tr>})}</tbody></table></div><section className="movement-history panel"><div className="panel-header"><div><h2>Histórico de movimentações</h2><p>Rastreabilidade das alterações de saldo</p></div></div>{state.movements.length === 0 ? <div className="table-empty">Nenhuma movimentação registrada ainda.</div> : state.movements.slice(0,10).map(m => { const product=state.products.find(p=>p.id===m.productId); return <div className="movement-row" key={m.id}><span className={`movement-type ${m.type}`}>{m.type === "entry" ? "+" : m.type === "exit" ? "−" : "="}</span><span><strong>{product?.name}</strong><small>{m.reason}</small></span><span><strong>{m.previousStock} → {m.resultingStock}</strong><small>{new Date(m.createdAt).toLocaleString("pt-BR")}</small></span></div>})}</section></>}
 
-    {productForm && <ProductModal value={productForm} categories={state.categories} editing={Boolean(editingProduct)} onChange={setProductForm} onClose={()=>setProductForm(null)} onSave={saveProduct}/>} 
+    {productForm && <ProductModal value={productForm} categories={state.categories} companyId={companyId} editing={Boolean(editingProduct)} onChange={setProductForm} onClose={()=>setProductForm(null)} onSave={saveProduct}/>} 
     {categoryForm && <CategoryModal value={categoryForm} editing={Boolean(editingCategory)} onChange={setCategoryForm} onClose={()=>setCategoryForm(null)} onSave={saveCategory}/>} 
     {movementProduct && <MovementModal product={movementProduct} onClose={()=>setMovementProduct(null)} onSave={async (type, quantity, reason) => { const ok = await act(() => repo().moveStock(movementProduct.id, type, quantity, reason), "Estoque atualizado com sucesso."); if (ok) setMovementProduct(null); }}/>}
   </div>;
@@ -80,6 +81,81 @@ function ProductImage({ src }: { src: string }) { return <span className="remote
 function Status({status}:{status:Product["status"]}) { const labels={available:"Disponível",out_of_stock:"Esgotado",inactive:"Inativo"}; return <span className={`catalog-status ${status}`}><i/>{labels[status]}</span>; }
 function Modal({title,onClose,children,footer}:{title:string;onClose:()=>void;children:React.ReactNode;footer:React.ReactNode}) { return <div className="modal-backdrop" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-label={title}><header><div><p className="eyebrow">HAMBURGUERIA 07</p><h2>{title}</h2></div><button onClick={onClose} aria-label="Fechar janela"><X/></button></header><div className="modal-body">{children}</div><footer>{footer}</footer></section></div>; }
 function Field({label,required,children,wide}:{label:string;required?:boolean;children:React.ReactNode;wide?:boolean}) { return <label className={`form-field ${wide?"wide":""}`}><span>{label}{required&&<em>*</em>}</span>{children}</label>; }
-function ProductModal({value,categories,editing,onChange,onClose,onSave}:{value:ProductInput;categories:Category[];editing:boolean;onChange:(v:ProductInput)=>void;onClose:()=>void;onSave:()=>void}) { const set=<K extends keyof ProductInput>(key:K,val:ProductInput[K])=>onChange({...value,[key]:val}); return <Modal title={editing?"Editar produto":"Novo produto"} onClose={onClose} footer={<><button className="text-button" onClick={onClose}>Cancelar</button><button className="primary-button" onClick={onSave}>Salvar produto</button></>}><div className="form-grid"><Field label="Nome" required wide><input value={value.name} onChange={e=>set("name",e.target.value)} placeholder="Ex.: Smash Bacon"/></Field><Field label="Descrição" wide><textarea value={value.description} onChange={e=>set("description",e.target.value)} rows={3}/></Field><Field label="Categoria" required><select value={value.categoryId} onChange={e=>set("categoryId",e.target.value)}>{categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><Field label="SKU"><input value={value.sku||""} onChange={e=>set("sku",e.target.value)}/></Field><Field label="Preço" required><input type="number" min="0" step="0.01" value={value.price} onChange={e=>set("price",Number(e.target.value))}/></Field><Field label="Preço promocional"><input type="number" min="0" step="0.01" value={value.promotionalPrice??""} onChange={e=>set("promotionalPrice",e.target.value===""?undefined:Number(e.target.value))}/></Field><Field label="Imagem por URL" wide><input type="url" value={value.imageUrl||""} onChange={e=>set("imageUrl",e.target.value)} placeholder="https://..."/></Field><Field label="Status"><select value={value.status} onChange={e=>set("status",e.target.value as Product["status"])}><option value="available">Disponível</option><option value="out_of_stock">Esgotado</option><option value="inactive">Inativo</option></select></Field><Field label="Controle de estoque"><label className="switch-row"><input type="checkbox" checked={value.trackStock} onChange={e=>set("trackStock",e.target.checked)}/><span>Controlar saldo</span></label></Field>{value.trackStock&&<><Field label="Estoque atual"><input type="number" min="0" value={value.currentStock} onChange={e=>set("currentStock",Number(e.target.value))}/></Field><Field label="Estoque mínimo"><input type="number" min="0" value={value.minimumStock} onChange={e=>set("minimumStock",Number(e.target.value))}/></Field></>}</div></Modal>; }
+function ProductModal({value,categories,companyId,editing,onChange,onClose,onSave}:{value:ProductInput;categories:Category[];companyId?:string;editing:boolean;onChange:(v:ProductInput)=>void;onClose:()=>void;onSave:()=>void}) {
+  const [uploading,setUploading]=useState<ProductMediaKind|null>(null);
+  const [mediaError,setMediaError]=useState("");
+  const set=<K extends keyof ProductInput>(key:K,val:ProductInput[K])=>onChange({...value,[key]:val});
+
+  async function upload(kind:ProductMediaKind,file:File){
+    setMediaError("");
+    if(!companyId){setMediaError("Selecione uma empresa antes de enviar mídia.");return;}
+    const validation=validateProductMedia(kind,file.type,file.size);
+    if(validation){setMediaError(validation);return;}
+    setUploading(kind);
+    try{
+      const client=createSupabaseBrowserClient();
+      const path=productMediaObjectPath(companyId,kind,file.name,file.type,crypto.randomUUID());
+      const {error}=await client.storage.from(PRODUCT_MEDIA_BUCKET).upload(path,file,{
+        cacheControl:"31536000",
+        contentType:file.type,
+        upsert:false,
+      });
+      if(error)throw error;
+      const {data}=client.storage.from(PRODUCT_MEDIA_BUCKET).getPublicUrl(path);
+      if(!data.publicUrl)throw new Error("Não foi possível obter a URL pública da mídia.");
+      set(kind==="image"?"imageUrl":"videoUrl",data.publicUrl);
+    }catch(error){
+      setMediaError(error instanceof Error?error.message:"Não foi possível enviar a mídia.");
+    }finally{
+      setUploading(null);
+    }
+  }
+
+  return <Modal
+    title={editing?"Editar produto":"Novo produto"}
+    onClose={onClose}
+    footer={<><button className="text-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={Boolean(uploading)} onClick={onSave}>{uploading?"Aguarde o upload...":"Salvar produto"}</button></>}
+  >
+    <div className="form-grid">
+      <Field label="Nome" required wide><input value={value.name} onChange={e=>set("name",e.target.value)} placeholder="Ex.: Smash Bacon"/></Field>
+      <Field label="Descrição" wide><textarea value={value.description} onChange={e=>set("description",e.target.value)} rows={3}/></Field>
+      <Field label="Categoria" required><select value={value.categoryId} onChange={e=>set("categoryId",e.target.value)}>{categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+      <Field label="SKU"><input value={value.sku||""} onChange={e=>set("sku",e.target.value)}/></Field>
+      <Field label="Preço" required><input type="number" min="0" step="0.01" value={value.price} onChange={e=>set("price",Number(e.target.value))}/></Field>
+      <Field label="Preço promocional"><input type="number" min="0" step="0.01" value={value.promotionalPrice??""} onChange={e=>set("promotionalPrice",e.target.value===""?undefined:Number(e.target.value))}/></Field>
+
+      <Field label="Imagem principal" wide>
+        <div className="grid gap-3">
+          {value.imageUrl&&<img src={value.imageUrl} alt="Prévia do produto" className="max-h-56 w-full rounded-xl border border-slate-200 object-cover"/>}
+          <label className="outline-button w-fit cursor-pointer">
+            <UploadCloud size={16}/>{uploading==="image"?"Enviando imagem...":"Enviar imagem"}
+            <input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" disabled={Boolean(uploading)} onChange={(e)=>{const file=e.target.files?.[0];if(file)void upload("image",file);e.currentTarget.value="";}}/>
+          </label>
+          <small>JPG, PNG ou WebP · máximo 8 MB.</small>
+          <input type="url" value={value.imageUrl||""} onChange={e=>set("imageUrl",e.target.value)} placeholder="Ou cole uma URL https://..."/>
+          {value.imageUrl&&<button type="button" className="text-button w-fit" onClick={()=>set("imageUrl","")}>Remover imagem</button>}
+        </div>
+      </Field>
+
+      <Field label="Vídeo do produto" wide>
+        <div className="grid gap-3">
+          {value.videoUrl&&<video src={value.videoUrl} poster={value.imageUrl||undefined} controls preload="metadata" className="max-h-72 w-full rounded-xl border border-slate-200 bg-black"/>}
+          <label className="outline-button w-fit cursor-pointer">
+            <Film size={16}/>{uploading==="video"?"Enviando vídeo...":"Enviar vídeo"}
+            <input className="sr-only" type="file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" disabled={Boolean(uploading)} onChange={(e)=>{const file=e.target.files?.[0];if(file)void upload("video",file);e.currentTarget.value="";}}/>
+          </label>
+          <small>MP4, WebM ou MOV · máximo 50 MB. MP4 é o formato recomendado.</small>
+          <input type="url" value={value.videoUrl||""} onChange={e=>set("videoUrl",e.target.value)} placeholder="Ou cole uma URL de vídeo https://..."/>
+          {value.videoUrl&&<button type="button" className="text-button w-fit" onClick={()=>set("videoUrl","")}>Remover vídeo</button>}
+        </div>
+      </Field>
+
+      {mediaError&&<div className="wide rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{mediaError}</div>}
+      <Field label="Status"><select value={value.status} onChange={e=>set("status",e.target.value as Product["status"])}><option value="available">Disponível</option><option value="out_of_stock">Esgotado</option><option value="inactive">Inativo</option></select></Field>
+      <Field label="Controle de estoque"><label className="switch-row"><input type="checkbox" checked={value.trackStock} onChange={e=>set("trackStock",e.target.checked)}/><span>Controlar saldo</span></label></Field>
+      {value.trackStock&&<><Field label="Estoque atual"><input type="number" min="0" value={value.currentStock} onChange={e=>set("currentStock",Number(e.target.value))}/></Field><Field label="Estoque mínimo"><input type="number" min="0" value={value.minimumStock} onChange={e=>set("minimumStock",Number(e.target.value))}/></Field></>}
+    </div>
+  </Modal>;
+}
 function CategoryModal({value,editing,onChange,onClose,onSave}:{value:CategoryInput;editing:boolean;onChange:(v:CategoryInput)=>void;onClose:()=>void;onSave:()=>void}) { return <Modal title={editing?"Editar categoria":"Nova categoria"} onClose={onClose} footer={<><button className="text-button" onClick={onClose}>Cancelar</button><button className="primary-button" onClick={onSave}>Salvar categoria</button></>}><div className="form-grid"><Field label="Nome" required wide><input value={value.name} onChange={e=>onChange({...value,name:e.target.value})}/></Field><Field label="Descrição" wide><textarea rows={3} value={value.description||""} onChange={e=>onChange({...value,description:e.target.value})}/></Field><Field label="Status"><select value={value.status} onChange={e=>onChange({...value,status:e.target.value as Category["status"]})}><option value="active">Ativa</option><option value="inactive">Inativa</option></select></Field><Field label="Ordem de exibição"><input type="number" min="0" value={value.displayOrder} onChange={e=>onChange({...value,displayOrder:Number(e.target.value)})}/></Field></div></Modal>; }
 function MovementModal({product,onClose,onSave}:{product:Product;onClose:()=>void;onSave:(type:StockMovementType,quantity:number,reason:string)=>void}) { const [type,setType]=useState<StockMovementType>("entry"); const [quantity,setQuantity]=useState(1); const [reason,setReason]=useState(""); return <Modal title={`Movimentar: ${product.name}`} onClose={onClose} footer={<><button className="text-button" onClick={onClose}>Cancelar</button><button className="primary-button" onClick={()=>onSave(type,quantity,reason)}>Confirmar movimentação</button></>}><div className="current-balance"><span>Saldo atual</span><strong>{product.currentStock} unidades</strong></div><div className="movement-tabs"><button className={type==="entry"?"active":""} onClick={()=>setType("entry")}>Entrada</button><button className={type==="exit"?"active":""} onClick={()=>setType("exit")}>Saída</button><button className={type==="adjustment"?"active":""} onClick={()=>setType("adjustment")}>Ajuste</button></div><div className="form-grid"><Field label={type==="adjustment"?"Novo saldo":"Quantidade"} required><input type="number" min="0" value={quantity} onChange={e=>setQuantity(Number(e.target.value))}/></Field><Field label="Motivo" required wide><textarea rows={3} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Ex.: Recebimento do fornecedor"/></Field></div></Modal>; }
