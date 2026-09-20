@@ -85,6 +85,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
         p_order: orderId,
         p_customer: String(account.customer_id),
       });
+      if (error?.message.includes("STORE_ACCOUNT_ORDER_ALREADY_LINKED")) {
+        return NextResponse.json(
+          { error: "Este pedido já foi vinculado a outra conta.", linked },
+          { status: 409, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       if (error) throw error;
       linked += 1;
     }
