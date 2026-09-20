@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isValidOrderClaimToken } from "@/lib/store-customer-order-claim";
 import type {
   PublicCheckoutInput,
   PublicCheckoutResult,
@@ -141,6 +143,7 @@ function parseCheckout(value: unknown): PublicCheckoutInput | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const body = value as Partial<PublicCheckoutInput>;
   if (typeof body.submissionId !== "string" || body.submissionId.trim().length < 8 || body.submissionId.length > 128) return null;
+  if (body.claimToken != null && !isValidOrderClaimToken(body.claimToken)) return null;
   if (typeof body.identified !== "boolean") return null;
   if (typeof body.fulfillment !== "string" || !fulfillmentValues.has(body.fulfillment)) return null;
   if (typeof body.paymentMethod !== "string" || !paymentValues.has(body.paymentMethod)) return null;
@@ -315,11 +318,25 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
       else if (delivery?.public_tracking_token) trackingToken = String(delivery.public_tracking_token);
     }
 
+    let claimToken: string | undefined;
+    if (!order.customer_id && payload.claimToken && isValidOrderClaimToken(payload.claimToken)) {
+      const tokenHash = createHash("sha256").update(payload.claimToken, "utf8").digest("hex");
+      const { data: registered, error: claimError } = await client.rpc("register_public_store_order_claim_token", {
+        p_order: String(order.id),
+        p_token_hash: tokenHash,
+      });
+      if (claimError) console.error("[public-storefront] comprovante local indisponível", claimError.code, claimError.message);
+      else {
+        const value = Array.isArray(registered) ? registered[0] : registered;
+        if (value === true) claimToken = payload.claimToken;
+      }
+    }
+
     const result: PublicCheckoutResult = {
       id: String(order.id), number: Number(order.number), total: Number(order.total_cents) / 100,
       discount: Number(order.discount_cents) / 100, deliveryFee: Number(order.delivery_fee_cents) / 100,
       status: String(order.status), paymentStatus: String(order.payment_status),
-      fulfillment: String(order.fulfillment) as PublicCheckoutResult["fulfillment"], createdAt: String(order.created_at), trackingToken,
+      fulfillment: String(order.fulfillment) as PublicCheckoutResult["fulfillment"], createdAt: String(order.created_at), trackingToken, claimToken,
       requiresAgeDocument: Boolean(order.contains_age_restricted_product) || containsAgeRestricted,
     };
     return NextResponse.json({ order: result }, { status: 201 });

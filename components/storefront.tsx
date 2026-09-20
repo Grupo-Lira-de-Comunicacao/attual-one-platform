@@ -10,6 +10,7 @@ import {
   saveStoreCustomerProfile,
   type StoredOrderItem,
 } from "@/lib/store-customer-memory";
+import { createOrderClaimToken } from "@/lib/store-customer-order-claim";
 import type {
   PublicCheckoutInput,
   PublicCheckoutResult,
@@ -193,6 +194,7 @@ function CheckoutModal({slug,store,cart,subtotal,initialCoupon,onClose,onConfirm
   const [payment,setPayment]=useState<PublicPaymentMethod>("pix"),[coupon,setCoupon]=useState(initialCoupon),[error,setError]=useState(""),[sending,setSending]=useState(false);
   const [ageAcknowledged,setAgeAcknowledged]=useState(false);
   const [submissionId]=useState(()=>crypto.randomUUID());
+  const [claimToken]=useState(()=>createOrderClaimToken());
   const zones=store.deliveryZones??[];
   const selectedZone=zones.find((zone)=>zone.name.toLocaleLowerCase("pt-BR")===address.district.trim().toLocaleLowerCase("pt-BR"));
   const defaultZone=zones.find((zone)=>zone.isDefault);
@@ -206,13 +208,13 @@ function CheckoutModal({slug,store,cart,subtotal,initialCoupon,onClose,onConfirm
     if(sending)return;setSending(true);setError("");
     if(fulfillment==="delivery"&&!address.district.trim()){setError("Selecione o bairro da entrega.");setSending(false);return;}
     if(containsAgeRestricted&&!ageAcknowledged){setError("Confirme que a bebida alcoólica será recebida por uma pessoa maior de 18 anos com documento com foto.");setSending(false);return;}
-    const input:PublicCheckoutInput={submissionId,identified,name,phone,fulfillment,address:fulfillment==="delivery"?address:undefined,paymentMethod:payment,couponCode:coupon.trim()||undefined,ageConfirmed:containsAgeRestricted?ageAcknowledged:undefined,items:cart.map((item)=>({productId:item.productId,quantity:item.quantity,additions:item.additions,note:item.note,configuration:item.configuration}))};
+    const input:PublicCheckoutInput={submissionId,claimToken,identified,name,phone,fulfillment,address:fulfillment==="delivery"?address:undefined,paymentMethod:payment,couponCode:coupon.trim()||undefined,ageConfirmed:containsAgeRestricted?ageAcknowledged:undefined,items:cart.map((item)=>({productId:item.productId,quantity:item.quantity,additions:item.additions,note:item.note,configuration:item.configuration}))};
     try{
       const response=await fetch(`/api/storefront/${encodeURIComponent(slug)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});
       const body=await response.json() as {order?:PublicCheckoutResult;error?:string};
       if(!response.ok||!body.order)throw new Error(body.error||"Não foi possível concluir o pedido.");
       if(identified){saveStoreCustomerProfile(slug,{name:name.trim(),phone:phone.trim(),address:{...address}});}
-      rememberCustomerOrder(slug,{id:body.order.id,number:body.order.number,total:body.order.total,status:body.order.status,paymentStatus:body.order.paymentStatus,fulfillment:body.order.fulfillment,createdAt:body.order.createdAt,trackingToken:body.order.trackingToken,items:cart.map((item)=>({...item,additions:[...item.additions]}))});
+      rememberCustomerOrder(slug,{id:body.order.id,number:body.order.number,total:body.order.total,status:body.order.status,paymentStatus:body.order.paymentStatus,fulfillment:body.order.fulfillment,createdAt:body.order.createdAt,trackingToken:body.order.trackingToken,claimToken:body.order.claimToken,items:cart.map((item)=>({...item,additions:[...item.additions]}))});
       onConfirmed(body.order);
     }catch(requestError){setError(requestError instanceof Error?requestError.message:"Não foi possível concluir o pedido.");setSending(false);}
   }

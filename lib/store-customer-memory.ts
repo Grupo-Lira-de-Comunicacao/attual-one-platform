@@ -35,6 +35,7 @@ export type StoredCustomerOrder = {
   createdAt: string;
   updatedAt?: string;
   trackingToken?: string;
+  claimToken?: string;
   items: StoredOrderItem[];
 };
 

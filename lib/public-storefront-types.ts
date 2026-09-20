@@ -84,6 +84,7 @@ export type PublicCheckoutItem = {
 
 export type PublicCheckoutInput = {
   submissionId: string;
+  claimToken?: string;
   identified: boolean;
   name?: string;
   phone?: string;
@@ -113,5 +114,6 @@ export type PublicCheckoutResult = {
   fulfillment: PublicFulfillmentType;
   createdAt: string;
   trackingToken?: string;
+  claimToken?: string;
   requiresAgeDocument?: boolean;
 };
