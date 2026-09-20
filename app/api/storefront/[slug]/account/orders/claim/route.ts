@@ -1,13 +1,13 @@
+import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { claimableCustomerOrderIds } from "@/lib/store-customer-order-claim";
+import { normalizeOrderClaimRequests } from "@/lib/store-customer-order-claim";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function adminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,18 +20,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
   const { slug } = await context.params;
   if (!slugPattern.test(slug)) return NextResponse.json({ error: "Loja inválida." }, { status: 400 });
 
-  let body: { orderIds?: unknown };
+  let claims;
   try {
-    body = await request.json() as { orderIds?: unknown };
+    const body = await request.json() as { claims?: unknown };
+    claims = normalizeOrderClaimRequests(body.claims);
   } catch {
     return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
   }
-  if (!Array.isArray(body.orderIds)) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
-
-  const orderIds = Array.from(new Set(
-    body.orderIds.filter((value): value is string => typeof value === "string" && uuidPattern.test(value)),
-  )).slice(0, 20);
-  if (!orderIds.length) return NextResponse.json({ linked: 0 });
+  if (!claims.length) return NextResponse.json({ linked: 0, rejected: 0 });
 
   try {
     const auth = await createSupabaseServerClient();
@@ -51,51 +47,39 @@ export async function POST(request: NextRequest, context: { params: Promise<{ sl
 
     const { data: account, error: accountError } = await admin
       .from("store_customer_accounts")
-      .select("customer_id,phone")
+      .select("customer_id")
       .eq("company_id", company.id)
       .eq("auth_user_id", userData.user.id)
       .maybeSingle();
     if (accountError) throw accountError;
-    if (!account?.customer_id || !String(account.phone ?? "").trim()) {
-      return NextResponse.json({ error: "Salve seu nome e telefone na conta antes de vincular pedidos." }, { status: 409 });
+    if (!account?.customer_id) {
+      return NextResponse.json({ error: "Complete seus dados na conta antes de vincular pedidos." }, { status: 409 });
     }
 
-    const { data: rows, error: orderError } = await admin
-      .from("orders")
-      .select("id,customer_id,customer_phone")
-      .eq("company_id", company.id)
-      .eq("source", "store")
-      .is("deleted_at", null)
-      .in("id", orderIds);
-    if (orderError) throw orderError;
-
-    const candidates = claimableCustomerOrderIds(
-      (rows ?? []).map((row) => ({
-        id: String(row.id),
-        customerId: row.customer_id ? String(row.customer_id) : null,
-        customerPhone: row.customer_phone ? String(row.customer_phone) : null,
-      })),
-      orderIds,
-      String(account.phone),
-    );
-
     let linked = 0;
-    for (const orderId of candidates) {
-      const { error } = await admin.rpc("link_public_store_order_customer", {
-        p_order: orderId,
+    let rejected = 0;
+    for (const claim of claims) {
+      const tokenHash = createHash("sha256").update(claim.claimToken, "utf8").digest("hex");
+      const { error } = await admin.rpc("claim_public_store_order_customer", {
+        p_order: claim.orderId,
         p_customer: String(account.customer_id),
+        p_token_hash: tokenHash,
       });
-      if (error?.message.includes("STORE_ACCOUNT_ORDER_ALREADY_LINKED")) {
-        return NextResponse.json(
-          { error: "Este pedido já foi vinculado a outra conta.", linked },
-          { status: 409, headers: { "Cache-Control": "no-store" } },
-        );
+      if (error) {
+        if (
+          error.message.includes("STORE_ACCOUNT_CLAIM_PROOF_INVALID")
+          || error.message.includes("STORE_ACCOUNT_ORDER_ALREADY_LINKED")
+          || error.message.includes("STORE_ACCOUNT_ORDER_NOT_FOUND")
+        ) {
+          rejected += 1;
+          continue;
+        }
+        throw error;
       }
-      if (error) throw error;
       linked += 1;
     }
 
-    const response = NextResponse.json({ linked });
+    const response = NextResponse.json({ linked, rejected });
     response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (error) {
