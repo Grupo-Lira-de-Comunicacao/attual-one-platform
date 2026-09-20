@@ -55,7 +55,7 @@ with check (
   bucket_id='product-media'
   and public.has_company_role(
     case
-      when split_part(name,'/',1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{8}$'
+      when split_part(name,'/',1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
       then split_part(name,'/',1)::uuid
       else null
     end,
