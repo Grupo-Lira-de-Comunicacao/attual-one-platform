@@ -15,7 +15,11 @@ with check (
     or name ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/products/video/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(mp4|webm|mov)$'
   )
   and public.has_company_role(
-    split_part(name,'/',1)::uuid,
+    case
+      when split_part(name,'/',1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      then split_part(name,'/',1)::uuid
+      else null
+    end,
     array['owner','manager']::public.company_role[]
   )
 );
@@ -31,7 +35,11 @@ using (
     or name ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/products/video/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(mp4|webm|mov)$'
   )
   and public.has_company_role(
-    split_part(name,'/',1)::uuid,
+    case
+      when split_part(name,'/',1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      then split_part(name,'/',1)::uuid
+      else null
+    end,
     array['owner','manager']::public.company_role[]
   )
 )
@@ -42,7 +50,11 @@ with check (
     or name ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/products/video/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(mp4|webm|mov)$'
   )
   and public.has_company_role(
-    split_part(name,'/',1)::uuid,
+    case
+      when split_part(name,'/',1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      then split_part(name,'/',1)::uuid
+      else null
+    end,
     array['owner','manager']::public.company_role[]
   )
 );
@@ -58,7 +70,11 @@ using (
     or name ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/products/video/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(mp4|webm|mov)$'
   )
   and public.has_company_role(
-    split_part(name,'/',1)::uuid,
+    case
+      when split_part(name,'/',1) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      then split_part(name,'/',1)::uuid
+      else null
+    end,
     array['owner','manager']::public.company_role[]
   )
 );
