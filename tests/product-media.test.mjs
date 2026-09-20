@@ -4,6 +4,7 @@ import {
   MAX_PRODUCT_IMAGE_BYTES,
   MAX_PRODUCT_VIDEO_BYTES,
   productMediaObjectPath,
+  productMediaObjectPathFromPublicUrl,
   validateProductMedia,
 } from "../lib/product-media.ts";
 
@@ -54,5 +55,36 @@ test("normalizes extension from MIME type instead of trusting the file name", ()
       "33333333-3333-4333-8333-333333333333",
     ),
     "11111111-1111-4111-8111-111111111111/products/video/33333333-3333-4333-8333-333333333333.mov",
+  );
+});
+
+
+test("extracts only canonical managed public media paths for the same company", () => {
+  const company = "11111111-1111-4111-8111-111111111111";
+  const path = `${company}/products/image/22222222-2222-4222-8222-222222222222.jpg`;
+  assert.equal(
+    productMediaObjectPathFromPublicUrl(
+      `https://example.supabase.co/storage/v1/object/public/product-media/${path}`,
+      company,
+    ),
+    path,
+  );
+  assert.equal(
+    productMediaObjectPathFromPublicUrl(
+      `https://example.supabase.co/storage/v1/object/public/product-media/${path}`,
+      "33333333-3333-4333-8333-333333333333",
+    ),
+    null,
+  );
+  assert.equal(
+    productMediaObjectPathFromPublicUrl("https://cdn.example.com/product.jpg", company),
+    null,
+  );
+  assert.equal(
+    productMediaObjectPathFromPublicUrl(
+      `https://example.supabase.co/storage/v1/object/public/product-media/${company}/other/file.jpg`,
+      company,
+    ),
+    null,
   );
 });
