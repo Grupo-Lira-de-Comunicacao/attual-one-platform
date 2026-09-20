@@ -7,7 +7,7 @@ import type { CatalogRepository } from "@/lib/repositories/contracts";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { CatalogState, Category, CategoryInput, Product, ProductInput, StockMovementType } from "@/lib/catalog-types";
-import { PRODUCT_MEDIA_BUCKET, productMediaObjectPath, validateProductMedia, type ProductMediaKind } from "@/lib/product-media";
+import { PRODUCT_MEDIA_BUCKET, productMediaObjectPath, productMediaObjectPathFromPublicUrl, validateProductMedia, type ProductMediaKind } from "@/lib/product-media";
 
 type View = "products" | "categories" | "stock";
 type Notice = { type: "success" | "error"; text: string } | null;
@@ -51,9 +51,49 @@ export function CatalogManager({ initialView, companyId }: { initialView: View; 
   const title = view === "products" ? "Produtos" : view === "categories" ? "Categorias" : "Estoque";
 
   const openProduct = (product?: Product) => { setEditingProduct(product?.id ?? null); setProductForm(product ? { categoryId: product.categoryId, name: product.name, description: product.description, price: product.price, promotionalPrice: product.promotionalPrice, imageUrl: product.imageUrl, videoUrl: product.videoUrl, sku: product.sku, trackStock: product.trackStock, currentStock: product.currentStock, minimumStock: product.minimumStock, status: product.status } : emptyProduct(state.categories[0]?.id)); };
-  const saveProduct = async () => { if (!productForm) return; const ok = await act(() => editingProduct ? repo().updateProduct(editingProduct, productForm) : repo().createProduct(productForm), editingProduct ? "Produto atualizado com sucesso." : "Produto criado com sucesso."); if (ok) setProductForm(null); };
+
+  const cleanupManagedMediaIfUnreferenced = async (url: string | undefined, nextState: CatalogState) => {
+    if (!url || !companyId) return;
+    const path = productMediaObjectPathFromPublicUrl(url, companyId);
+    if (!path) return;
+    const stillReferenced = nextState.products.some((product) => product.imageUrl === url || product.videoUrl === url);
+    if (stillReferenced) return;
+    const client = createSupabaseBrowserClient();
+    const { error } = await client.storage.from(PRODUCT_MEDIA_BUCKET).remove([path]);
+    if (error) console.warn("[product-media] mídia anterior preservada após falha de cleanup", error.message);
+  };
+
+  const saveProduct = async (): Promise<boolean> => {
+    if (!productForm) return false;
+    const previous = editingProduct ? state.products.find((product) => product.id === editingProduct) : undefined;
+    try {
+      const nextState = editingProduct
+        ? await repo().updateProduct(editingProduct, productForm)
+        : await repo().createProduct(productForm);
+      setState(nextState);
+      setProductForm(null);
+      inform("success", editingProduct ? "Produto atualizado com sucesso." : "Produto criado com sucesso.");
+      if (previous?.imageUrl && previous.imageUrl !== productForm.imageUrl) void cleanupManagedMediaIfUnreferenced(previous.imageUrl, nextState);
+      if (previous?.videoUrl && previous.videoUrl !== productForm.videoUrl) void cleanupManagedMediaIfUnreferenced(previous.videoUrl, nextState);
+      return true;
+    } catch (error) {
+      inform("error", error instanceof Error ? error.message : "Não foi possível concluir.");
+      return false;
+    }
+  };
   const saveCategory = async () => { if (!categoryForm) return; const ok = await act(() => editingCategory ? repo().updateCategory(editingCategory, categoryForm) : repo().createCategory(categoryForm), editingCategory ? "Categoria atualizada com sucesso." : "Categoria criada com sucesso."); if (ok) setCategoryForm(null); };
-  const removeProduct = async (product: Product) => { if (window.confirm(`Excluir “${product.name}”? Esta ação também remove seu histórico de estoque.`)) await act(() => repo().deleteProduct(product.id), "Produto excluído."); };
+  const removeProduct = async (product: Product) => {
+    if (!window.confirm(`Excluir “${product.name}”? Esta ação também remove seu histórico de estoque.`)) return;
+    try {
+      const nextState = await repo().deleteProduct(product.id);
+      setState(nextState);
+      inform("success", "Produto excluído.");
+      if (product.imageUrl) void cleanupManagedMediaIfUnreferenced(product.imageUrl, nextState);
+      if (product.videoUrl) void cleanupManagedMediaIfUnreferenced(product.videoUrl, nextState);
+    } catch (error) {
+      inform("error", error instanceof Error ? error.message : "Não foi possível concluir.");
+    }
+  };
   const removeCategory = async (category: Category) => { if (window.confirm(`Excluir a categoria “${category.name}”?`)) await act(() => repo().deleteCategory(category.id), "Categoria excluída."); };
 
   return <div className="page catalog-page">
@@ -81,10 +121,56 @@ function ProductImage({ src }: { src: string }) { return <span className="remote
 function Status({status}:{status:Product["status"]}) { const labels={available:"Disponível",out_of_stock:"Esgotado",inactive:"Inativo"}; return <span className={`catalog-status ${status}`}><i/>{labels[status]}</span>; }
 function Modal({title,onClose,children,footer}:{title:string;onClose:()=>void;children:React.ReactNode;footer:React.ReactNode}) { return <div className="modal-backdrop" role="presentation"><section className="modal" role="dialog" aria-modal="true" aria-label={title}><header><div><p className="eyebrow">HAMBURGUERIA 07</p><h2>{title}</h2></div><button onClick={onClose} aria-label="Fechar janela"><X/></button></header><div className="modal-body">{children}</div><footer>{footer}</footer></section></div>; }
 function Field({label,required,children,wide}:{label:string;required?:boolean;children:React.ReactNode;wide?:boolean}) { return <label className={`form-field ${wide?"wide":""}`}><span>{label}{required&&<em>*</em>}</span>{children}</label>; }
-function ProductModal({value,categories,companyId,editing,onChange,onClose,onSave}:{value:ProductInput;categories:Category[];companyId?:string;editing:boolean;onChange:(v:ProductInput)=>void;onClose:()=>void;onSave:()=>void}) {
+function ProductModal({value,categories,companyId,editing,onChange,onClose,onSave}:{value:ProductInput;categories:Category[];companyId?:string;editing:boolean;onChange:(v:ProductInput)=>void;onClose:()=>void;onSave:()=>Promise<boolean>}) {
   const [uploading,setUploading]=useState<ProductMediaKind|null>(null);
   const [mediaError,setMediaError]=useState("");
+  const pendingUploads=useRef(new Set<string>());
   const set=<K extends keyof ProductInput>(key:K,val:ProductInput[K])=>onChange({...value,[key]:val});
+
+  async function removePendingPath(path:string){
+    if(!pendingUploads.current.has(path))return;
+    const client=createSupabaseBrowserClient();
+    const {error}=await client.storage.from(PRODUCT_MEDIA_BUCKET).remove([path]);
+    if(error){setMediaError("Não foi possível limpar uma mídia temporária. Ela será preservada.");return;}
+    pendingUploads.current.delete(path);
+  }
+
+  async function discardPendingUploads(){
+    const paths=Array.from(pendingUploads.current);
+    if(paths.length===0)return;
+    const client=createSupabaseBrowserClient();
+    const {error}=await client.storage.from(PRODUCT_MEDIA_BUCKET).remove(paths);
+    if(!error)pendingUploads.current.clear();
+  }
+
+  async function closeWithoutSaving(){
+    await discardPendingUploads();
+    onClose();
+  }
+
+  async function clearMedia(kind:ProductMediaKind){
+    if(companyId){
+      const current=kind==="image"?value.imageUrl:value.videoUrl;
+      const path=productMediaObjectPathFromPublicUrl(current,companyId);
+      if(path&&pendingUploads.current.has(path))await removePendingPath(path);
+    }
+    set(kind==="image"?"imageUrl":"videoUrl","");
+  }
+
+  async function saveWithLifecycle(){
+    if(companyId){
+      const selected=new Set(
+        [value.imageUrl,value.videoUrl]
+          .map((url)=>productMediaObjectPathFromPublicUrl(url,companyId))
+          .filter((path):path is string=>Boolean(path)),
+      );
+      for(const path of Array.from(pendingUploads.current)){
+        if(!selected.has(path))await removePendingPath(path);
+      }
+    }
+    const ok=await onSave();
+    if(ok)pendingUploads.current.clear();
+  }
 
   async function upload(kind:ProductMediaKind,file:File){
     setMediaError("");
@@ -103,7 +189,11 @@ function ProductModal({value,categories,companyId,editing,onChange,onClose,onSav
       if(error)throw error;
       const {data}=client.storage.from(PRODUCT_MEDIA_BUCKET).getPublicUrl(path);
       if(!data.publicUrl)throw new Error("Não foi possível obter a URL pública da mídia.");
+      const previousUrl=kind==="image"?value.imageUrl:value.videoUrl;
+      const previousPath=companyId?productMediaObjectPathFromPublicUrl(previousUrl,companyId):null;
+      pendingUploads.current.add(path);
       set(kind==="image"?"imageUrl":"videoUrl",data.publicUrl);
+      if(previousPath&&pendingUploads.current.has(previousPath))await removePendingPath(previousPath);
     }catch(error){
       setMediaError(error instanceof Error?error.message:"Não foi possível enviar a mídia.");
     }finally{
@@ -113,8 +203,8 @@ function ProductModal({value,categories,companyId,editing,onChange,onClose,onSav
 
   return <Modal
     title={editing?"Editar produto":"Novo produto"}
-    onClose={onClose}
-    footer={<><button className="text-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={Boolean(uploading)} onClick={onSave}>{uploading?"Aguarde o upload...":"Salvar produto"}</button></>}
+    onClose={()=>void closeWithoutSaving()}
+    footer={<><button className="text-button" onClick={()=>void closeWithoutSaving()}>Cancelar</button><button className="primary-button" disabled={Boolean(uploading)} onClick={()=>void saveWithLifecycle()}>{uploading?"Aguarde o upload...":"Salvar produto"}</button></>}
   >
     <div className="form-grid">
       <Field label="Nome" required wide><input value={value.name} onChange={e=>set("name",e.target.value)} placeholder="Ex.: Smash Bacon"/></Field>
@@ -133,7 +223,7 @@ function ProductModal({value,categories,companyId,editing,onChange,onClose,onSav
           </label>
           <small>JPG, PNG ou WebP · máximo 8 MB.</small>
           <input type="url" value={value.imageUrl||""} onChange={e=>set("imageUrl",e.target.value)} placeholder="Ou cole uma URL https://..."/>
-          {value.imageUrl&&<button type="button" className="text-button w-fit" onClick={()=>set("imageUrl","")}>Remover imagem</button>}
+          {value.imageUrl&&<button type="button" className="text-button w-fit" onClick={()=>void clearMedia("image")}>Remover imagem</button>}
         </div>
       </Field>
 
@@ -146,7 +236,7 @@ function ProductModal({value,categories,companyId,editing,onChange,onClose,onSav
           </label>
           <small>MP4, WebM ou MOV · máximo 50 MB. MP4 é o formato recomendado.</small>
           <input type="url" value={value.videoUrl||""} onChange={e=>set("videoUrl",e.target.value)} placeholder="Ou cole uma URL de vídeo https://..."/>
-          {value.videoUrl&&<button type="button" className="text-button w-fit" onClick={()=>set("videoUrl","")}>Remover vídeo</button>}
+          {value.videoUrl&&<button type="button" className="text-button w-fit" onClick={()=>void clearMedia("video")}>Remover vídeo</button>}
         </div>
       </Field>
 
