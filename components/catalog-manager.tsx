@@ -144,6 +144,7 @@ function ProductModal({value,categories,companyId,editing,onChange,onClose,onSav
   }
 
   async function closeWithoutSaving(){
+    if(uploading){setMediaError("Aguarde o upload terminar antes de fechar.");return;}
     await discardPendingUploads();
     onClose();
   }
