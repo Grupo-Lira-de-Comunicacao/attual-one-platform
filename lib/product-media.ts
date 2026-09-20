@@ -39,3 +39,27 @@ export function productMediaObjectPath(
   const extension = productMediaExtension(fileName, mimeType);
   return `${companyId}/products/${kind}/${objectId}.${extension}`;
 }
+
+
+const PRODUCT_MEDIA_PUBLIC_MARKER = `/storage/v1/object/public/${PRODUCT_MEDIA_BUCKET}/`;
+const UUID_SOURCE = "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+const CANONICAL_PRODUCT_MEDIA_PATH = new RegExp(
+  `^(${UUID_SOURCE})/products/(image|video)/(${UUID_SOURCE})\\.(jpg|png|webp|mp4|webm|mov)$`,
+  "i",
+);
+
+export function productMediaObjectPathFromPublicUrl(url: string | null | undefined, companyId: string): string | null {
+  if (!url || !companyId) return null;
+  try {
+    const parsed = new URL(url);
+    const markerIndex = parsed.pathname.indexOf(PRODUCT_MEDIA_PUBLIC_MARKER);
+    if (markerIndex < 0) return null;
+    const encodedPath = parsed.pathname.slice(markerIndex + PRODUCT_MEDIA_PUBLIC_MARKER.length);
+    const path = decodeURIComponent(encodedPath);
+    const match = path.match(CANONICAL_PRODUCT_MEDIA_PATH);
+    if (!match || match[1].toLowerCase() !== companyId.toLowerCase()) return null;
+    return path;
+  } catch {
+    return null;
+  }
+}
