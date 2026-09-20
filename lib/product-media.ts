@@ -19,9 +19,7 @@ export function validateProductMedia(kind: ProductMediaKind, mimeType: string, s
   return null;
 }
 
-export function productMediaExtension(fileName: string, mimeType: string): string {
-  const raw = fileName.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
-  if (raw && raw.length <= 8) return raw;
+export function productMediaExtension(_fileName: string, mimeType: string): string {
   if (mimeType === "image/jpeg") return "jpg";
   if (mimeType === "image/png") return "png";
   if (mimeType === "image/webp") return "webp";
