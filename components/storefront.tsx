@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, ChevronRight, Clock3, MapPin, Minus, Pizza, Plus, Search, ShieldCheck, ShoppingBag, Store, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Clock3, MapPin, Minus, Pizza, PlayCircle, Plus, Search, ShieldCheck, ShoppingBag, Store, X } from "lucide-react";
 import { PizzaConfigurator } from "@/components/pizza-configurator";
 import { StoreCustomerAccount } from "@/components/store-customer-account";
 import {
@@ -161,7 +161,28 @@ export function Storefront({ slug }: { slug: string }) {
   </div>;
 }
 
-function ProductCard({product,companyName,disabled,onAdd}:{product:PublicStoreProduct;companyName:string;disabled:boolean;onAdd:()=>void}){const unavailable=product.status!=="available"||disabled;return <article className={`store-product-card ${unavailable?"unavailable":""}`}><div className="store-product-photo">{product.imageUrl?<span style={{backgroundImage:`url(${product.imageUrl})`}}/>:<span className="food-placeholder">{product.name.split(" ").map((part)=>part[0]).slice(0,2).join("")}</span>}{product.promotionalPrice!==undefined&&<em>OFERTA</em>}{product.status==="out_of_stock"&&<b>ESGOTADO</b>}{product.requiresAgeVerification&&<span className="absolute bottom-2 left-2 rounded-full bg-slate-950 px-2.5 py-1 text-[10px] font-black text-white">18+</span>}</div><div className="store-product-info"><small>{companyName}</small><h2>{product.name}</h2><p>{product.description}</p>{product.requiresAgeVerification&&<div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold text-amber-800"><ShieldCheck size={14}/>Bebida alcoólica · entrega somente a maior de 18 anos</div>}<div><span>{product.promotionalPrice!==undefined&&<del>{money.format(product.price)}</del>}<strong>{money.format(product.promotionalPrice??product.price)}</strong></span><button onClick={onAdd} disabled={unavailable} aria-label={`Adicionar ${product.name}`}><Plus/></button></div></div></article>}
+function ProductCard({product,companyName,disabled,onAdd}:{product:PublicStoreProduct;companyName:string;disabled:boolean;onAdd:()=>void}){
+  const unavailable=product.status!=="available"||disabled;
+  return <article className={`store-product-card ${unavailable?"unavailable":""}`}>
+    <div className="store-product-photo">
+      {product.imageUrl?<span style={{backgroundImage:`url(${product.imageUrl})`}}/>:<span className="food-placeholder">{product.name.split(" ").map((part)=>part[0]).slice(0,2).join("")}</span>}
+      {product.promotionalPrice!==undefined&&<em>OFERTA</em>}
+      {product.status==="out_of_stock"&&<b>ESGOTADO</b>}
+      {product.requiresAgeVerification&&<span className="absolute bottom-2 left-2 rounded-full bg-slate-950 px-2.5 py-1 text-[10px] font-black text-white">18+</span>}
+    </div>
+    <div className="store-product-info">
+      <small>{companyName}</small>
+      <h2>{product.name}</h2>
+      <p>{product.description}</p>
+      {product.videoUrl&&<details className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-black text-slate-800"><PlayCircle size={16}/>Ver vídeo do produto</summary>
+        <video src={product.videoUrl} poster={product.imageUrl||undefined} controls preload="metadata" playsInline className="mt-2 w-full rounded-lg bg-black"/>
+      </details>}
+      {product.requiresAgeVerification&&<div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold text-amber-800"><ShieldCheck size={14}/>Bebida alcoólica · entrega somente a maior de 18 anos</div>}
+      <div><span>{product.promotionalPrice!==undefined&&<del>{money.format(product.price)}</del>}<strong>{money.format(product.promotionalPrice??product.price)}</strong></span><button onClick={onAdd} disabled={unavailable} aria-label={`Adicionar ${product.name}`}><Plus/></button></div>
+    </div>
+  </article>;
+}
 
 function CartDrawer({cart,subtotal,containsAgeRestricted,onClose,onQuantity,onItem,onClear,onCheckout}:{cart:CartItem[];subtotal:number;containsAgeRestricted:boolean;onClose:()=>void;onQuantity:(index:number,quantity:number)=>void;onItem:(index:number,patch:Partial<Pick<CartItem,"additions"|"note">>)=>void;onClear:()=>void;onCheckout:()=>void}){return <div className="store-overlay"><aside className="cart-drawer" role="dialog" aria-modal="true"><header><div><p className="eyebrow">SEU PEDIDO</p><h2>Carrinho</h2></div><button onClick={onClose} aria-label="Fechar carrinho"><X/></button></header><div className="cart-items">{cart.map((item,index)=><article key={`${item.productId}-${index}`}><div><strong>{item.productName}</strong>{!item.configuration&&<input value={item.additions.join(", ")} placeholder="Adicionais (separe por vírgula)" onChange={(event)=>onItem(index,{additions:event.target.value.split(",").map((value)=>value.trim()).filter(Boolean).slice(0,20)})}/>}<input value={item.note} maxLength={500} placeholder="Alguma observação?" onChange={(event)=>onItem(index,{note:event.target.value})}/></div><div className="cart-item-bottom"><span className="qty"><button onClick={()=>onQuantity(index,item.quantity-1)}><Minus/></button><b>{item.quantity}</b><button onClick={()=>onQuantity(index,item.quantity+1)}><Plus/></button></span><strong>{money.format(item.unitPrice*item.quantity)}</strong></div></article>)}</div>{containsAgeRestricted&&<div className="mx-4 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><strong className="flex items-center gap-2"><ShieldCheck size={16}/>Pedido contém bebida alcoólica — 18+</strong><span className="mt-1 block">A bebida só poderá ser entregue ou retirada por uma pessoa maior de 18 anos mediante conferência de documento com foto.</span></div>}<div className="cart-summary"><span>Subtotal <strong>{money.format(subtotal)}</strong></span><span className="total">Total parcial <strong>{money.format(subtotal)}</strong></span><button className="store-primary" disabled={!cart.length} onClick={onCheckout}>Continuar para o checkout <ChevronRight/></button><button className="clear-cart" onClick={onClear}>Limpar carrinho</button></div></aside></div>}
 
