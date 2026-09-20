@@ -94,7 +94,7 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
 
   const [categoriesResult, productsResult, zonesResult] = await Promise.all([
     client.from("categories").select("id,name,description,display_order").eq("company_id", company.id).eq("status", "active").is("deleted_at", null).order("display_order", { ascending: true }),
-    client.from("products").select("id,category_id,name,description,price_cents,promotional_price_cents,image_url,sku,track_stock,current_stock,status,age_restricted_min").eq("company_id", company.id).eq("is_public", true).in("status", ["available", "out_of_stock"]).is("deleted_at", null).order("name", { ascending: true }),
+    client.from("products").select("id,category_id,name,description,price_cents,promotional_price_cents,image_url,video_url,sku,track_stock,current_stock,status,age_restricted_min").eq("company_id", company.id).eq("is_public", true).in("status", ["available", "out_of_stock"]).is("deleted_at", null).order("name", { ascending: true }),
     client.from("delivery_zones").select("id,name,fee_cents,distance_band,is_default,display_order").eq("company_id", company.id).eq("active", true).order("display_order", { ascending: true }),
   ]);
   const readError = categoriesResult.error ?? productsResult.error ?? zonesResult.error;
@@ -129,7 +129,7 @@ async function loadStore(client: SupabaseClient, slug: string): Promise<PublicSt
       return {
         id: row.id, categoryId: row.category_id, name: row.name, description: row.description, price: row.price_cents / 100,
         promotionalPrice: promotionPrice(profile, row.sku, company.timezone ?? "America/Sao_Paulo") ?? (row.promotional_price_cents == null ? undefined : row.promotional_price_cents / 100),
-        imageUrl: row.image_url ?? undefined, sku: row.sku ?? undefined, trackStock: Boolean(row.track_stock), currentStock: Number(row.current_stock), status: row.status,
+        imageUrl: row.image_url ?? undefined, videoUrl: row.video_url ?? undefined, sku: row.sku ?? undefined, trackStock: Boolean(row.track_stock), currentStock: Number(row.current_stock), status: row.status,
         requiresAgeVerification: Number(row.age_restricted_min ?? 0) >= 18 || alcoholCategoryIds.has(row.category_id), isPizza, ...parts,
       };
     }),

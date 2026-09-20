@@ -22,6 +22,7 @@ export interface Product {
   price: number;
   promotionalPrice?: number;
   imageUrl?: string;
+  videoUrl?: string;
   sku?: string;
   trackStock: boolean;
   currentStock: number;
