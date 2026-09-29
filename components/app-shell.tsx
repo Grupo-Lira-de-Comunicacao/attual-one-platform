@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import {
   BarChart3, Bike, Boxes, CircleDollarSign, Gift, Import,
   LayoutDashboard, Menu, ReceiptText, Search, Settings,
-  ShoppingBag, Users, X, Bell, Plus,
+  ShoppingBag, Users, X, Bell, Plus, Network,
 } from "lucide-react";
 import { SessionAction } from "@/components/session-action";
 import { CompanySwitcher } from "@/components/company-switcher";
@@ -29,6 +29,7 @@ const NAVIGATION = [
   { label: "Cupons e fidelidade", href: "/cupons-e-fidelidade", icon: Gift },
   { label: "Pagamentos", href: "/pagamentos", icon: CircleDollarSign },
   { label: "Relatórios", href: "/relatorios", icon: BarChart3 },
+  { label: "Organograma", href: "/organograma", icon: Network },
   { label: "Importação", href: "/importacao", icon: Import },
   { label: "Configurações", href: "/configuracoes", icon: Settings },
 ];

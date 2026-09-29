@@ -229,3 +229,101 @@ a { color: inherit; text-decoration: none; }
 @media(max-width:680px){.mestre-topbar{padding:0 16px}.mestre-main{padding:20px 14px 40px}.mestre-company-row{flex-wrap:wrap}.mestre-inline-form{width:100%;flex-wrap:wrap}}
 
 .company-options{display:flex;flex-direction:column;gap:8px;margin-top:18px}.company-options button{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;color:var(--text);background:white;padding:12px;text-align:left}.company-options button>span{display:flex;flex:1;flex-direction:column}.company-options small{margin-top:3px;color:#8b979f}.migration-preview>header,.migration-preview>footer{display:flex;align-items:center;justify-content:space-between;gap:12px}.migration-preview>header>div{display:flex;align-items:center;gap:9px}.migration-preview>header>div>span,.migration-preview>footer>div{display:flex;flex-direction:column}.migration-preview small{margin-top:3px;color:#8c989f;font-size:8px}.migration-counts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:20px 0}.migration-counts article{display:flex;flex-direction:column;padding:11px;background:#f7f9fa;border-radius:7px}.migration-counts span{color:#7c8992;font-size:8px}.migration-counts strong{margin-top:4px;font-size:17px}.migration-warnings{display:flex;gap:7px;padding:10px;margin-bottom:15px;color:#9c6900;background:#fff6df;border-radius:7px;font-size:8px}.migration-preview footer{padding-top:15px;border-top:1px solid var(--line)}@media(max-width:680px){.migration-counts{grid-template-columns:1fr 1fr}.migration-preview>footer{align-items:stretch;flex-direction:column}}
+
+
+/* Organograma institucional Grupo Lira */
+.institutional-page{min-height:calc(100vh - 72px)}
+.institutional-heading{align-items:flex-start}
+.institutional-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.institutional-actions .outline-button,.institutional-history-panel header button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:8px;color:#53616b;background:#fff;padding:9px 11px;font-size:9px;font-weight:800;cursor:pointer}
+.institutional-actions button:disabled,.institutional-history-panel header button:disabled{opacity:.55;cursor:not-allowed}
+.institutional-loading{min-height:420px;display:grid;place-content:center;justify-items:center;gap:12px;color:#70808a}
+.institutional-spin{animation:institutional-spin 1s linear infinite}
+@keyframes institutional-spin{to{transform:rotate(360deg)}}
+.institutional-message{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-8px 0 14px;padding:10px 12px;border:1px solid #cfe4ec;border-radius:8px;color:var(--petroleum);background:var(--blue-light);font-size:9px;text-align:left;cursor:pointer}
+.institutional-tabs{display:flex;gap:6px;margin-bottom:14px;padding:4px;background:#e9edef;border-radius:9px;width:max-content;max-width:100%;overflow:auto}
+.institutional-tabs button{display:flex;align-items:center;gap:6px;border:0;border-radius:7px;color:#687780;background:transparent;padding:8px 12px;font-size:9px;font-weight:800;cursor:pointer;white-space:nowrap}
+.institutional-tabs button.active{color:var(--petroleum);background:white;box-shadow:0 1px 5px #00000012}
+.institutional-canvas{position:relative;min-height:520px;padding:30px;overflow:auto;background:#202020;border:1px solid #303030;border-radius:12px;box-shadow:var(--shadow)}
+.institutional-root{position:relative;width:min(420px,100%);display:flex;flex-direction:column;align-items:center;margin:0 auto;padding:18px 52px 18px 20px;color:#f8f4ed;background:#2a2a2a;border:1px solid #555;border-radius:10px;text-align:center;box-shadow:0 10px 30px #0004}
+.institutional-root span{color:#b7cda9;font-size:8px;font-weight:900;letter-spacing:1.3px}
+.institutional-root strong{margin-top:6px;font-size:15px;letter-spacing:.2px}
+.institutional-root button{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:28px;height:28px;display:grid;place-items:center;border:1px solid #ffffff18;border-radius:7px;color:#e7efe2;background:#ffffff0b;cursor:pointer}
+.institutional-root-line{width:1px;height:28px;margin:auto;background:#819574}
+.institutional-pillar-grid{position:relative;display:grid;grid-template-columns:repeat(4,minmax(210px,1fr));gap:16px}
+.institutional-pillar-grid:before{content:"";position:absolute;left:12.5%;right:12.5%;top:-14px;height:1px;background:#819574}
+.institutional-branch{position:relative;min-width:0}
+.institutional-pillar-grid>.institutional-branch:before{content:"";position:absolute;top:-14px;left:50%;width:1px;height:14px;background:#819574}
+.institutional-node-card{position:relative;min-height:68px;display:flex;align-items:flex-start;justify-content:space-between;gap:9px;padding:12px;border:1px solid #454545;border-radius:9px;color:#f4f1eb;background:#292929}
+.institutional-node-card>div:first-child{min-width:0;display:flex;flex:1;flex-direction:column}
+.institutional-node-card small{color:#a9c59a;font-size:7px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.institutional-node-card strong{margin-top:4px;font-size:11px;line-height:1.35}
+.institutional-node-card span{margin-top:4px;color:#bcbcbc;font-size:8px;line-height:1.4}
+.institutional-node-tools{display:flex;gap:4px;opacity:.2;transition:.18s}
+.institutional-node-card:hover .institutional-node-tools{opacity:1}
+.institutional-node-tools button{width:25px;height:25px;display:grid;place-items:center;border:1px solid #ffffff18;border-radius:6px;color:#f4f1eb;background:#ffffff08;cursor:pointer}
+.institutional-children{position:relative;display:flex;flex-direction:column;gap:8px;padding:16px 0 0 18px}
+.institutional-children:before{content:"";position:absolute;left:8px;top:0;bottom:27px;width:1px;background:#60705a}
+.institutional-children>.institutional-branch:before{content:"";position:absolute;left:-10px;top:31px;width:10px;height:1px;background:#60705a}
+.institutional-children .institutional-node-card{min-height:54px;background:#252525}
+.institutional-empty{min-height:430px;display:grid;place-content:center;justify-items:center;gap:10px;color:#d0d0d0;text-align:center}
+.institutional-empty h2{margin:0;font-size:15px}
+.institutional-registry,.institutional-history-panel{background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow)}
+.institutional-registry-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid var(--line)}
+.institutional-registry-toolbar h2,.institutional-history-panel h2{margin:0 0 4px;font-size:13px;color:#34414b}
+.institutional-registry-toolbar p,.institutional-history-panel p{margin:0;color:#909ba2;font-size:8px}
+.institutional-registry-toolbar input{width:min(350px,100%);border:1px solid var(--line);border-radius:8px;padding:9px 11px;outline:0;font-size:9px}
+.institutional-registry-toolbar input:focus{border-color:#9fd6ec;box-shadow:0 0 0 3px var(--blue-light)}
+.institutional-table-wrap{overflow:auto}
+.institutional-table{width:100%;border-collapse:collapse;min-width:850px}
+.institutional-table th{padding:10px 12px;color:#8a959d;background:#fafbfc;border-bottom:1px solid var(--line);font-size:7px;letter-spacing:.7px;text-align:left;text-transform:uppercase}
+.institutional-table td{padding:11px 12px;border-bottom:1px solid #edf0f2;color:#53616a;font-size:9px;vertical-align:middle}
+.institutional-table tbody tr:last-child td{border-bottom:0}
+.institutional-table td:nth-child(2){min-width:210px}
+.institutional-table td:nth-child(2) strong,.institutional-table td:nth-child(2) small{display:block}
+.institutional-table td:nth-child(2) strong{color:#34414b;font-size:10px}
+.institutional-table td:nth-child(2) small{margin-top:3px;color:#9aa4ab;font-size:7px}
+.institutional-table tr.is-archived{opacity:.5}
+.institutional-order{display:inline-grid;min-width:28px;place-items:center;padding:4px 6px;border-radius:6px;color:var(--petroleum);background:#e9f2f4;font-weight:900}
+.institutional-status{display:inline-flex;padding:4px 7px;border-radius:10px;font-size:7px;font-weight:900}
+.institutional-status.active{color:#2f7b46;background:#edf8f0}.institutional-status.planned{color:#7d5ec7;background:#f1efff}.institutional-status.paused{color:#a76f00;background:#fff6df}.institutional-status.archived{color:#77828a;background:#eef0f2}
+.institutional-row-actions{display:flex;gap:4px}
+.institutional-row-actions button{width:27px;height:27px;display:grid;place-items:center;border:1px solid var(--line);border-radius:6px;color:#687780;background:#fff;cursor:pointer}
+.institutional-row-actions button:hover{color:var(--petroleum);border-color:#bfdae4}.institutional-row-actions button:disabled{opacity:.3;cursor:not-allowed}
+.institutional-history-grid{display:grid;grid-template-columns:.75fr 1.25fr;gap:14px}
+.institutional-history-panel{overflow:hidden}
+.institutional-history-panel header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 18px;border-bottom:1px solid var(--line)}
+.institutional-history-list{max-height:560px;overflow:auto}
+.institutional-history-list>div{display:flex;flex-direction:column;gap:3px;padding:12px 18px;border-bottom:1px solid #edf0f2}
+.institutional-history-list>div:last-child{border-bottom:0}
+.institutional-history-list strong{font-size:9px;color:#3d4b55}
+.institutional-history-list span,.institutional-history-list small{font-size:7px;color:#8c979e}
+.institutional-muted{padding:18px!important}
+.institutional-modal-backdrop{position:fixed;z-index:120;inset:0;display:grid;place-items:center;padding:20px;background:#10222999;backdrop-filter:blur(3px)}
+.institutional-modal{width:min(700px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:13px;box-shadow:0 26px 80px #0005}
+.institutional-modal>header{position:sticky;z-index:2;top:0;display:flex;align-items:center;justify-content:space-between;padding:18px 20px;background:#fff;border-bottom:1px solid var(--line)}
+.institutional-modal>header h2{margin:0;font-size:16px}
+.institutional-modal>header button{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:7px;color:#6e7a82;background:#f3f5f6;cursor:pointer}
+.institutional-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;padding:20px}
+.institutional-form-grid label{display:flex;flex-direction:column;gap:6px}
+.institutional-form-grid label>span{font-size:8px;color:#5f6d76;font-weight:850}
+.institutional-form-grid .full{grid-column:1/-1}
+.institutional-form-grid input,.institutional-form-grid select,.institutional-form-grid textarea{width:100%;border:1px solid #dfe5e8;border-radius:7px;color:#35424c;background:#fff;padding:9px 10px;outline:0;font-size:9px}
+.institutional-form-grid input:focus,.institutional-form-grid select:focus,.institutional-form-grid textarea:focus{border-color:#9fd6ec;box-shadow:0 0 0 3px var(--blue-light)}
+.institutional-form-grid textarea{resize:vertical}
+.institutional-check{flex-direction:row!important;align-items:center}
+.institutional-check input{width:auto}
+.institutional-modal>footer{position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;background:#f9fafb;border-top:1px solid var(--line)}
+@media(max-width:1180px){.institutional-pillar-grid{grid-template-columns:repeat(2,minmax(260px,1fr))}.institutional-pillar-grid:before{display:none}.institutional-pillar-grid>.institutional-branch:before{display:none}}
+@media(max-width:760px){.institutional-heading{flex-direction:column}.institutional-actions{width:100%;justify-content:flex-start}.institutional-canvas{padding:18px}.institutional-pillar-grid{grid-template-columns:1fr}.institutional-registry-toolbar{align-items:stretch;flex-direction:column}.institutional-registry-toolbar input{width:100%}.institutional-history-grid{grid-template-columns:1fr}.institutional-form-grid{grid-template-columns:1fr}.institutional-form-grid .full{grid-column:auto}}
+@media print{
+  .sidebar,.topbar,.institutional-actions,.institutional-tabs,.institutional-message,.institutional-node-tools{display:none!important}
+  .main-column{width:100%!important;margin:0!important}
+  .institutional-page{padding:12mm!important;max-width:none!important}
+  .institutional-heading{margin-bottom:8mm}
+  .institutional-canvas{overflow:visible!important;min-height:0;background:#fff!important;border:0!important;box-shadow:none!important;padding:0!important}
+  .institutional-root,.institutional-node-card{color:#111!important;background:#fff!important;border-color:#444!important;box-shadow:none!important}
+  .institutional-root span,.institutional-node-card small,.institutional-node-card span{color:#444!important}
+  .institutional-root-line,.institutional-pillar-grid:before,.institutional-pillar-grid>.institutional-branch:before,.institutional-children:before,.institutional-children>.institutional-branch:before{background:#555!important}
+  .institutional-pillar-grid{grid-template-columns:repeat(4,1fr)!important;gap:8px!important}
+}
