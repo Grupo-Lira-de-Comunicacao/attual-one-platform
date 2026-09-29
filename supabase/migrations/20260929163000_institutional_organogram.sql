@@ -142,3 +142,56 @@ select v.code,v.name,'platform',p.id,v.ord,'active',true
 from (values ('attual-one','ATTUAL ONE',10),('attual-autopilot','ATTUAL AUTOPILOT',20),('attual-display-indoor','ATTUAL DISPLAY / INDOOR',30),('attual-conecta-imoveis','ATTUAL CONECTA IMÓVEIS',40),('casting-360','CASTING 360',50),('tv-attual-app','TV ATTUAL APP',60),('attual-conecta-social','ATTUAL CONECTA SOCIAL',70)) as v(code,name,ord)
 cross join (select id from public.institutional_nodes where code='lira-technology') p
 on conflict (code) do update set name=excluded.name,node_type=excluded.node_type,parent_id=excluded.parent_id,display_order=excluded.display_order,status=excluded.status,is_official=excluded.is_official;
+
+
+-- Restrict the institutional module to ATTUAL ONE platform administrators.
+drop policy if exists "institutional_nodes_select_authenticated" on public.institutional_nodes;
+drop policy if exists "institutional_nodes_insert_authenticated" on public.institutional_nodes;
+drop policy if exists "institutional_nodes_update_authenticated" on public.institutional_nodes;
+drop policy if exists "institutional_nodes_delete_authenticated" on public.institutional_nodes;
+
+create policy "institutional_nodes_select_platform_admin"
+on public.institutional_nodes for select to authenticated
+using (exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid())));
+
+create policy "institutional_nodes_insert_platform_admin"
+on public.institutional_nodes for insert to authenticated
+with check (exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid())));
+
+create policy "institutional_nodes_update_platform_admin"
+on public.institutional_nodes for update to authenticated
+using (exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid())))
+with check (exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid())));
+
+create policy "institutional_nodes_delete_platform_admin"
+on public.institutional_nodes for delete to authenticated
+using (exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid())));
+
+drop policy if exists "institutional_change_log_select_authenticated" on public.institutional_change_log;
+drop policy if exists "institutional_change_log_insert_authenticated" on public.institutional_change_log;
+create policy "institutional_change_log_select_platform_admin"
+on public.institutional_change_log for select to authenticated
+using (exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid())));
+create policy "institutional_change_log_insert_platform_admin"
+on public.institutional_change_log for insert to authenticated
+with check (
+  exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid()))
+  and (actor_id is null or actor_id = (select auth.uid()))
+);
+
+drop policy if exists "institutional_versions_select_authenticated" on public.institutional_versions;
+drop policy if exists "institutional_versions_insert_authenticated" on public.institutional_versions;
+create policy "institutional_versions_select_platform_admin"
+on public.institutional_versions for select to authenticated
+using (exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid())));
+create policy "institutional_versions_insert_platform_admin"
+on public.institutional_versions for insert to authenticated
+with check (
+  exists (select 1 from public.platform_admins pa where pa.id = (select auth.uid()))
+  and (created_by is null or created_by = (select auth.uid()))
+);
+
+create index if not exists institutional_change_log_actor_idx on public.institutional_change_log(actor_id);
+create index if not exists institutional_nodes_created_by_idx on public.institutional_nodes(created_by);
+create index if not exists institutional_nodes_updated_by_idx on public.institutional_nodes(updated_by);
+create index if not exists institutional_versions_created_by_idx on public.institutional_versions(created_by);
