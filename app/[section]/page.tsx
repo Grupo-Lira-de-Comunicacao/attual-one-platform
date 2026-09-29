@@ -9,6 +9,7 @@ import { RewardsManager } from "@/components/rewards-manager";
 import { ReportsManager } from "@/components/reports-manager";
 import { LocalMigrationPanel } from "@/components/local-migration-panel";
 import { CompanySettings } from "@/components/company-settings";
+import { InstitutionalOrganogram } from "@/components/institutional-organogram";
 import { getSelectedCompanyId } from "@/lib/supabase/session";
 
 const sections: Record<string, { title: string; description: string }> = {
@@ -22,6 +23,7 @@ const sections: Record<string, { title: string; description: string }> = {
   relatorios: { title: "Relatórios", description: "Entenda vendas, produtos, clientes e estoque." },
   importacao: { title: "Importação", description: "Prepare a entrada segura de dados por CSV ou Excel." },
   configuracoes: { title: "Configurações", description: "Personalize a empresa, usuários e preferências." },
+  organograma: { title: "Organograma Grupo Lira", description: "Gerencie a estrutura institucional oficial do Grupo Lira." },
 };
 
 export async function generateMetadata({ params }: { params: Promise<{ section: string }> }): Promise<Metadata> {
@@ -38,6 +40,7 @@ export default async function SectionPage({ params }: { params: Promise<{ sectio
   if (section === "relatorios") { const companyId = await getSelectedCompanyId(); return <ReportsManager companyId={companyId ?? undefined} />; }
   if (section === "importacao") return <LocalMigrationPanel />;
   if (section === "configuracoes") { const companyId = await getSelectedCompanyId(); return <CompanySettings companyId={companyId ?? undefined} />; }
+  if (section === "organograma") return <InstitutionalOrganogram />;
   const current = sections[section];
   if (!current) notFound();
   return <div className="page placeholder-page">
