@@ -422,7 +422,7 @@ export function InstitutionalOrganogram() {
         <div>
           <p className="eyebrow">GRUPO LIRA DE COMUNICAÇÃO</p>
           <h1>Organograma institucional</h1>
-          <p>Edite a estrutura oficial sem precisar redesenhar a arte a cada mudança.</p>
+          <p>Edite a estrutura oficial sem precisar redesenhar a arte a cada mudança. Use <strong>+ Adicionar</strong> em qualquer cartão para incluir um item dentro daquela área.</p>
         </div>
         <div className="institutional-actions">
           <button className="outline-button" onClick={saveVersion} disabled={saving}>
@@ -465,7 +465,12 @@ export function InstitutionalOrganogram() {
               <div className="institutional-root">
                 <span>ESTRUTURA OFICIAL</span>
                 <strong>{root.name}</strong>
-                <button onClick={() => openEdit(root)} aria-label="Editar grupo"><Pencil size={14} /></button>
+                <div className="institutional-root-actions">
+                  <button className="institutional-root-add" onClick={() => openCreate(root.id)} aria-label="Adicionar área ao Grupo Lira">
+                    <Plus size={14} /><span>Adicionar área</span>
+                  </button>
+                  <button onClick={() => openEdit(root)} aria-label="Editar grupo"><Pencil size={14} /></button>
+                </div>
               </div>
               <div className="institutional-root-line" />
               <div className="institutional-pillar-grid">
@@ -531,6 +536,7 @@ export function InstitutionalOrganogram() {
                       <td><span className={`institutional-status ${node.status}`}>{statusLabels[node.status]}</span></td>
                       <td>
                         <div className="institutional-row-actions">
+                          <button onClick={() => openCreate(node.id)} title={`Adicionar dentro de ${node.name}`} aria-label={`Adicionar dentro de ${node.name}`}><Plus size={15} /></button>
                           <button onClick={() => moveSibling(node, -1)} title="Subir"><ChevronUp size={15} /></button>
                           <button onClick={() => moveSibling(node, 1)} title="Descer"><ChevronDown size={15} /></button>
                           <button onClick={() => openEdit(node)} title="Editar"><Pencil size={15} /></button>
@@ -675,8 +681,12 @@ function InstitutionalBranch({
           {node.description && <span>{node.description}</span>}
         </div>
         <div className="institutional-node-tools">
-          <button onClick={() => onAdd(node.id)} aria-label={`Adicionar item em ${node.name}`}><Plus size={13} /></button>
-          <button onClick={() => onEdit(node)} aria-label={`Editar ${node.name}`}><Pencil size={13} /></button>
+          <button className="institutional-card-add" onClick={() => onAdd(node.id)} aria-label={`Adicionar item em ${node.name}`}>
+            <Plus size={13} /><span>Adicionar</span>
+          </button>
+          <button className="institutional-card-edit" onClick={() => onEdit(node)} aria-label={`Editar ${node.name}`} title="Editar">
+            <Pencil size={13} />
+          </button>
         </div>
       </div>
       {children.length > 0 && (
