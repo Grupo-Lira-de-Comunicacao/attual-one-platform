@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-type NodeType = "group" | "pillar" | "brand" | "project" | "platform" | "system";
+type NodeType = "group" | "area" | "brand" | "program_content" | "project_event" | "platform_system";
+type ContentFormat = "programa" | "jornalismo" | "entrevista" | "talk_show" | "podcast" | "variedades" | "musical" | "esportes" | "especial" | "outro";
 type NodeStatus = "active" | "planned" | "paused" | "archived";
 
 interface InstitutionalNode {
@@ -26,6 +27,7 @@ interface InstitutionalNode {
   code: string;
   name: string;
   node_type: NodeType;
+  content_format: ContentFormat | null;
   parent_id: string | null;
   status: NodeStatus;
   display_order: number;
@@ -59,11 +61,24 @@ type EditorState = Partial<InstitutionalNode> & { name: string; node_type: NodeT
 
 const typeLabels: Record<NodeType, string> = {
   group: "Grupo",
-  pillar: "Pilar",
+  area: "Área",
   brand: "Marca / unidade",
-  project: "Projeto",
-  platform: "Plataforma",
-  system: "Sistema",
+  program_content: "Programa / conteúdo",
+  project_event: "Projeto / evento",
+  platform_system: "Plataforma / sistema",
+};
+
+const formatLabels: Record<ContentFormat, string> = {
+  programa: "Programa",
+  jornalismo: "Jornalismo",
+  entrevista: "Entrevista",
+  talk_show: "Talk show",
+  podcast: "Podcast",
+  variedades: "Variedades",
+  musical: "Musical",
+  esportes: "Esportes",
+  especial: "Especial",
+  outro: "Outro",
 };
 
 const statusLabels: Record<NodeStatus, string> = {
@@ -76,6 +91,7 @@ const statusLabels: Record<NodeStatus, string> = {
 const emptyEditor = (): EditorState => ({
   name: "",
   node_type: "brand",
+  content_format: null,
   status: "active",
   display_order: 10,
   parent_id: null,
@@ -164,7 +180,7 @@ export function InstitutionalOrganogram() {
     if (!term) return sortNodes(nodes);
     return sortNodes(
       nodes.filter((node) =>
-        [node.name, node.code, node.responsible ?? "", node.description ?? ""].some((value) =>
+        [node.name, node.code, node.responsible ?? "", node.description ?? "", node.content_format ? formatLabels[node.content_format] : ""].some((value) =>
           value.toLocaleLowerCase("pt-BR").includes(term),
         ),
       ),
@@ -225,7 +241,23 @@ export function InstitutionalOrganogram() {
   function openCreate(parentId: string | null = root?.id ?? null) {
     const siblings = parentId ? childrenByParent.get(parentId) ?? [] : nodes.filter((node) => node.parent_id === null);
     const nextOrder = siblings.length ? Math.max(...siblings.map((node) => node.display_order)) + 10 : 10;
-    setEditor({ ...emptyEditor(), parent_id: parentId, display_order: nextOrder });
+    const parent = parentId ? nodes.find((node) => node.id === parentId) : null;
+
+    let nodeType: NodeType = "brand";
+    if (!parent) nodeType = "group";
+    else if (parent.node_type === "group") nodeType = "area";
+    else if (parent.node_type === "area") nodeType = "brand";
+    else if (parent.code === "tv-attual" || parent.code === "radio-attual") nodeType = "program_content";
+    else if (parent.code === "lira-technology") nodeType = "platform_system";
+    else nodeType = "project_event";
+
+    setEditor({
+      ...emptyEditor(),
+      parent_id: parentId,
+      display_order: nextOrder,
+      node_type: nodeType,
+      content_format: nodeType === "program_content" ? "programa" : null,
+    });
   }
 
   function openEdit(node: InstitutionalNode) {
@@ -253,6 +285,7 @@ export function InstitutionalOrganogram() {
       const payload = {
         name: editor.name.trim(),
         node_type: editor.node_type,
+        content_format: editor.node_type === "program_content" ? (editor.content_format ?? "programa") : null,
         parent_id: editor.code === "grupo-lira" ? null : editor.parent_id ?? null,
         status: editor.status,
         display_order: Number.isFinite(editor.display_order) ? Math.max(0, Number(editor.display_order)) : 0,
@@ -531,7 +564,7 @@ export function InstitutionalOrganogram() {
                         <strong>{node.name}</strong>
                         <small>{node.code}</small>
                       </td>
-                      <td>{typeLabels[node.node_type]}</td>
+                      <td>{typeLabels[node.node_type]}{node.content_format ? ` · ${formatLabels[node.content_format]}` : ""}</td>
                       <td>{parent?.name ?? "— raiz —"}</td>
                       <td><span className={`institutional-status ${node.status}`}>{statusLabels[node.status]}</span></td>
                       <td>
@@ -600,10 +633,32 @@ export function InstitutionalOrganogram() {
               </label>
               <label>
                 <span>Tipo</span>
-                <select value={editor.node_type} onChange={(event) => setEditor({ ...editor, node_type: event.target.value as NodeType })} disabled={editor.code === "grupo-lira"}>
+                <select
+                  value={editor.node_type}
+                  onChange={(event) => {
+                    const nodeType = event.target.value as NodeType;
+                    setEditor({
+                      ...editor,
+                      node_type: nodeType,
+                      content_format: nodeType === "program_content" ? (editor.content_format ?? "programa") : null,
+                    });
+                  }}
+                  disabled={editor.code === "grupo-lira"}
+                >
                   {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </label>
+              {editor.node_type === "program_content" && (
+                <label>
+                  <span>Formato</span>
+                  <select
+                    value={editor.content_format ?? "programa"}
+                    onChange={(event) => setEditor({ ...editor, content_format: event.target.value as ContentFormat })}
+                  >
+                    {Object.entries(formatLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
+              )}
               <label>
                 <span>Status</span>
                 <select value={editor.status} onChange={(event) => setEditor({ ...editor, status: event.target.value as NodeStatus })}>
@@ -676,7 +731,7 @@ function InstitutionalBranch({
     <article className={`institutional-branch type-${node.node_type}`}>
       <div className="institutional-node-card">
         <div>
-          <small>{typeLabels[node.node_type]}</small>
+          <small>{typeLabels[node.node_type]}{node.content_format ? ` · ${formatLabels[node.content_format]}` : ""}</small>
           <strong>{node.name}</strong>
           {node.description && <span>{node.description}</span>}
         </div>
