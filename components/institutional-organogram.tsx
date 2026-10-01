@@ -410,15 +410,15 @@ export function InstitutionalOrganogram() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.scale(scale, scale);
-    ctx.fillStyle = "#202020";
+    ctx.fillStyle = "#0D1426";
     ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = "#f6f2ec";
+    ctx.fillStyle = "#FFFFFF";
     ctx.font = `700 ${titleSize}px "Segoe UI", Arial, sans-serif`;
     ctx.fillText("ESTRUTURA INSTITUCIONAL APROVADA", padding, padding + titleSize);
-    ctx.fillStyle = "#d8e3d0";
+    ctx.fillStyle = "#00C2FF";
     ctx.font = `600 ${fontSize}px "Segoe UI Mono", Consolas, monospace`;
     lines.forEach((line, index) => ctx.fillText(line, padding, padding + 72 + index * lineHeight));
-    ctx.fillStyle = "#c7c7c7";
+    ctx.fillStyle = "#5B6475";
     ctx.font = '14px "Segoe UI", Arial, sans-serif';
     ctx.fillText(`Gerado em ${new Date().toLocaleString("pt-BR")}`, padding, height - 24);
 
@@ -728,7 +728,7 @@ function InstitutionalBranch({
 }) {
   const children = childrenByParent.get(node.id) ?? [];
   return (
-    <article className={`institutional-branch type-${node.node_type}`}>
+    <article className={`institutional-branch type-${node.node_type}${node.code === "tv-attual" ? " brand-tv-attual" : ""}`}>
       <div className="institutional-node-card">
         <div>
           <small>{typeLabels[node.node_type]}{node.content_format ? ` · ${formatLabels[node.content_format]}` : ""}</small>
