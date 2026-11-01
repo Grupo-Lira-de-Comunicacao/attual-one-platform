@@ -1,0 +1,239 @@
+/* Miranda's Point & Burguer - isolated visual skin for ATTUAL ONE storefront.
+   Applied only to /loja/mirandas-point-burguer. Other tenants remain unchanged. */
+.mirandas-store {
+  --mirandas-ink: #120e0c;
+  --mirandas-panel: #201710;
+  --mirandas-gold: #e9b65b;
+  --mirandas-bright: #ffca6a;
+  --mirandas-muted: #b7a797;
+  min-height: 100vh;
+  color: #fff4e0;
+  background: radial-gradient(circle at 82% 5%, #583318 0, transparent 30%), #100d0c;
+  font-family: Inter, Arial, sans-serif;
+}
+.mirandas-store :focus-visible { outline: 3px solid #f9ce79; outline-offset: 3px; }
+.mirandas-store .store-top {
+  height: 86px; padding-inline: max(18px, calc((100vw - 1180px) / 2));
+  background: rgba(16, 12, 10, .96); border-bottom: 1px solid #7f562d;
+  box-shadow: 0 8px 34px #0004;
+}
+.mirandas-store .store-brand { gap: 14px; color: #f9e7ce; }
+.mirandas-store .store-brand .store-logo {
+  width: 54px; height: 54px; border: 1px solid #bb8d46;
+  border-radius: 50%; background: radial-gradient(circle, #805022, #22160f);
+  color: #ffd88c; font-size: 34px; font-weight: 400; text-shadow: 0 1px 12px #ffcf6699;
+}
+.mirandas-store .store-brand strong {
+  color: #fff1db; font-family: Georgia, "Times New Roman", serif;
+  font-style: italic; font-size: 27px; font-weight: 700; line-height: 1;
+  letter-spacing: -.9px;
+}
+.mirandas-store .store-brand small {
+  margin-top: 4px; color: #e9b65b; font-size: 10px;
+  letter-spacing: 2.6px; font-weight: 800; text-transform: uppercase;
+}
+.mirandas-store .store-cart-button {
+  min-height: 49px; border-radius: 14px; border: 1px solid #e8b65b;
+  color: #150e07; background: linear-gradient(145deg, #ffdf8e, #e9a93f);
+  box-shadow: 0 4px 22px #cf8e2b2a;
+}
+.mirandas-store .store-cart-button span { color: #fff; background: #24160c; font-size: 11px; font-weight: 800; }
+.mirandas-store .store-cart-button strong { font-size: 13px; }
+.mirandas-store .store-cover {
+  min-height: 430px;
+  background: radial-gradient(circle at 75% 42%, #aa6327 0, #5b3219 17%, transparent 38%),
+              linear-gradient(120deg,#120d0b 5%, #27170f 56%, #150e0b 100%);
+  border-bottom: 1px solid #56371b;
+}
+.mirandas-store .store-cover::before {
+  content: ""; position: absolute; inset: 0; opacity: .17;
+  background: repeating-linear-gradient(135deg, transparent 0 48px, #b17d3e 49px, transparent 50px);
+  pointer-events: none;
+}
+.mirandas-store .cover-pattern {
+  background: radial-gradient(circle at 58% 65%, #f4a5371a, transparent 36%),
+              radial-gradient(circle at 92% 20%, #d9a55f1a, transparent 30%);
+}
+.mirandas-store .store-cover-copy { min-height: 430px; gap: 30px; padding-block: 55px; }
+.mirandas-store .store-logo.hero {
+  width: 110px; height: 110px; flex-shrink: 0;
+  border-radius: 28px; border: 1px solid #d1a254; font-size: 72px;
+  color: #fbd389; font-weight: 400; background: linear-gradient(145deg,#563011,#1d120c);
+  text-shadow: 0 2px 18px #edaa40aa;
+  transform: rotate(-7deg); box-shadow: 0 20px 60px #0007, inset 0 0 24px #e8b65b18;
+}
+.mirandas-store .store-cover-copy > div:nth-child(3) { position: relative; z-index: 1; }
+.mirandas-store .store-cover .eyebrow {
+  color: #f2b453 !important; font-size: 11px !important; letter-spacing: 3px;
+}
+.mirandas-store .store-cover h1 {
+  max-width: 680px; margin: 8px 0 17px; font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(38px, 5.3vw, 72px); line-height: 1.04; letter-spacing: -1.2px;
+  text-wrap: balance; text-shadow: 0 4px 12px #0005;
+}
+.mirandas-store .store-cover h1 em { color: #f2b856; font-style: italic; }
+.mirandas-store .mirandas-intro { max-width: 580px; color: #e7d1b2; font-size: 15px; line-height: 1.6; margin: 0 0 24px; }
+.mirandas-store .store-meta { gap: 10px 18px; }
+.mirandas-store .store-meta span { font-size: 11px; color: #e0c4a1; }
+.mirandas-store .store-meta span:first-child {
+  color: #f8e7c3; border: 1px solid #a47b45; padding: 8px 13px;
+  background: #3c281a; border-radius: 25px;
+}
+.mirandas-store .mirandas-hero-art {
+  position: absolute; right: max(1%, calc((100vw - 1280px)/2)); top: 43px;
+  width: 34%; max-width: 390px; aspect-ratio: 1;
+  display: grid; place-items: center; border: 2px dashed #dfaa58aa;
+  border-radius: 50%; transform: rotate(10deg);
+  background: radial-gradient(circle,#e2a54844 5%, #4e301e77 45%, transparent 68%);
+  box-shadow: 0 0 0 23px #d89f4415, 0 0 90px #efb75c2d;
+  pointer-events: none;
+}
+.mirandas-store .mirandas-hero-art span { font-size: clamp(90px,16vw,215px); filter: drop-shadow(0 25px 22px #000b); transform: rotate(-10deg); }
+.mirandas-store .mirandas-demo-banner {
+  max-width: 1180px; margin: 18px auto 0; padding: 13px 18px;
+  border-radius: 12px; background: #3c2913; border: 1px solid #caa25c;
+  color: #fbdc9f; font-size: 13px; font-weight: 700;
+}
+.mirandas-store .store-content { padding-top: 38px; padding-bottom: 90px; }
+.mirandas-store .mirandas-introbar {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: 16px; margin-bottom: 26px; padding: 22px 25px;
+  background: linear-gradient(110deg,#2b1b11,#1e1510);
+  border: 1px solid #73502b; border-radius: 18px;
+}
+.mirandas-store .mirandas-introbar h2 {
+  color: #fff1d9; margin: 3px 0 0; font-family: Georgia,serif;
+  font-size: clamp(22px,3vw,34px); font-weight: 700; letter-spacing: -.6px;
+}
+.mirandas-store .mirandas-introbar small { color: #e8b65b; font-size: 10px; font-weight: 800; letter-spacing: 2.5px; }
+.mirandas-store .mirandas-introbar p { max-width: 370px; color: #cab7a0; margin: 0; font-size: 12px; line-height: 1.6; }
+.mirandas-store .store-toolbar > label {
+  max-width: none; height: 52px; padding-inline: 20px;
+  background: #241910; border: 1px solid #78542f; border-radius: 14px;
+}
+.mirandas-store .store-toolbar svg { color: #dfb26e; }
+.mirandas-store .store-toolbar input {
+  color: #f7e8cf; font-size: 14px; min-width: 0;
+}
+.mirandas-store .store-toolbar input::placeholder { color: #b79c7d; }
+.mirandas-store .store-toolbar nav { margin: 20px 0 30px; gap: 11px; padding-bottom: 8px; }
+.mirandas-store .store-toolbar nav button {
+  min-height: 48px; padding: 11px 18px;
+  border-radius: 13px; background: #24190f;
+  border: 1px solid #805b30; color: #f2daba; font-size: 13px;
+  display: flex; align-items: center; gap: 8px;
+  transition: .18s ease;
+}
+.mirandas-store .store-toolbar nav button span { font-size: 19px; }
+.mirandas-store .store-toolbar nav button:hover { border-color: #ffc76f; transform: translateY(-1px); }
+.mirandas-store .store-toolbar nav button.active {
+  color: #251508; border-color: #ffc36b;
+  background: linear-gradient(140deg,#ffe09a,#eeb153);
+  box-shadow: 0 5px 18px #dd983b33;
+}
+.mirandas-store .store-products { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 21px; }
+.mirandas-store .store-product-card {
+  background: linear-gradient(155deg,#2d2017,#1a130f);
+  color: #fff0d9; border: 1px solid #714a2c; border-radius: 18px;
+  box-shadow: 0 14px 38px #0005;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.mirandas-store .store-product-card:hover {
+  transform: translateY(-4px); border-color: #e7a64b; box-shadow: 0 16px 38px #0009;
+}
+.mirandas-store .store-product-photo {
+  height: 210px; overflow: hidden;
+  background: radial-gradient(circle at 48% 35%,#b76f33,#58351e 44%,#26190f 75%);
+  border-bottom: 1px solid #65472c;
+}
+.mirandas-store .store-product-photo>span { transition: transform .35s ease; }
+.mirandas-store .store-product-card:hover .store-product-photo>span { transform: scale(1.04); }
+.mirandas-store .food-placeholder { color:#ffd18e; font-size: 80px; text-shadow: 0 12px 25px #0007; }
+.mirandas-store .store-product-info { padding: 20px 19px; }
+.mirandas-store .store-product-info>small {
+  color: #e4ae58; font-size: 10px; font-weight: 800; letter-spacing: 1px;
+}
+.mirandas-store .store-product-info h2 { color: #fff8e9; font-size: 21px; margin: 9px 0; letter-spacing: -.4px; }
+.mirandas-store .store-product-info p { color: #bfae99; font-size: 12px; height: 61px; line-height: 1.55; }
+.mirandas-store .store-product-info > div { margin-top: 16px; align-items: center; }
+.mirandas-store .store-product-info strong { color: #f7c46f; font-size: 23px; letter-spacing: -.5px; }
+.mirandas-store .store-product-info button {
+  width: 46px; height: 46px; border-radius: 13px;
+  color: #241508; background: linear-gradient(135deg,#f8d186,#e5a342);
+  box-shadow: 0 5px 14px #bf832d22;
+}
+.mirandas-store .store-product-info button:disabled { opacity: .45; background: #a39a88; }
+.mirandas-store .store-empty { color: #ead7bd; }
+.mirandas-store .store-empty p { font-size: 14px; }
+.mirandas-store .store-footer {
+  background: #0d0a08; border-top: 1px solid #684526; color: #d9bb92;
+}
+.mirandas-store .store-footer .store-logo {
+  background: #553418; color: #ffcb72; font-size: 24px;
+}
+.mirandas-store .store-footer p { color: #d7bb9a; font-size: 12px; }
+.mirandas-store .mobile-cart-bar {
+  background: linear-gradient(120deg,#f8d28b,#df9f40);
+  color: #231306; border: 1px solid #f7d18a; font-size: 13px;
+}
+.mirandas-store .store-overlay { background: #0e080acc; }
+.mirandas-store .cart-drawer,
+.mirandas-store .checkout-modal {
+  background: #211710; color: #fff0d9; border-left: 1px solid #b68648;
+}
+.mirandas-store .cart-drawer>header,.mirandas-store .cart-summary,.mirandas-store .cart-items article,
+.mirandas-store .checkout-modal>header { background: #211710; border-color: #67472c; }
+.mirandas-store .cart-items input { color: #fff0d9; background: #37271a; }
+.mirandas-store .cart-summary>span,.mirandas-store .cart-summary .total { color: #f9e8cf; }
+.mirandas-store .store-primary {
+  min-height: 47px; color: #231509;
+  background: linear-gradient(120deg,#f5ce83,#dfa347); font-size: 13px;
+}
+.mirandas-store .checkout-body section { border-color: #67472c; }
+.mirandas-store .checkout-options button { color: #e6ceab; background: #352619; border-color: #7c5834; }
+.mirandas-store .checkout-options button.active { color: #1a1108; background: #e8b65b; border-color: #f7cd80; }
+.mirandas-store .checkout-grid label { color: #e6c9a7; }
+.mirandas-store .checkout-grid input,.mirandas-store .coupon-input input { color: #fff; background: #2e2119; border-color: #78542f; }
+.mirandas-store .checkout-modal>footer { background: #211710; }
+@media (max-width: 900px) {
+  .mirandas-store .store-products { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .mirandas-store .store-cover-copy { padding-right: 33%; }
+  .mirandas-store .mirandas-hero-art { right: 4%; width: 30%; top: 95px; }
+  .mirandas-store .store-logo.hero { display: none; }
+  .mirandas-store .store-cover-copy>div:nth-child(3) { min-width: 0; }
+}
+@media (max-width: 600px) {
+  .mirandas-store .store-top { height: 72px; padding: 0 14px; }
+  .mirandas-store .store-brand { gap: 8px; }
+  .mirandas-store .store-brand .store-logo { width: 40px; height: 40px; font-size: 25px; }
+  .mirandas-store .store-brand strong { font-size: 20px; }
+  .mirandas-store .store-brand small { display: block; font-size: 7px; letter-spacing: 1.3px; }
+  .mirandas-store .store-cart-button { padding: 7px 9px; min-height: 43px; }
+  .mirandas-store .store-cover { min-height: 390px; }
+  .mirandas-store .store-cover-copy { min-height: 390px; padding: 40px 20px 145px; }
+  .mirandas-store .store-cover h1 { max-width: 330px; font-size: clamp(32px,8vw,46px); }
+  .mirandas-store .store-cover .eyebrow { font-size: 9px !important; }
+  .mirandas-store .mirandas-intro { font-size: 12px; }
+  .mirandas-store .store-meta span { font-size: 9px; }
+  .mirandas-store .mirandas-hero-art {
+    width: 160px; top: auto; right: 14px; bottom: 12px;
+    box-shadow: 0 0 0 10px #d89f4415, 0 0 40px #efb75c29;
+  }
+  .mirandas-store .mirandas-hero-art span { font-size: 92px; }
+  .mirandas-store .store-content { padding: 24px 14px 95px; }
+  .mirandas-store .mirandas-introbar { padding: 17px; }
+  .mirandas-store .mirandas-introbar h2 { font-size: 26px; }
+  .mirandas-store .mirandas-introbar p { font-size: 11px; }
+  .mirandas-store .store-toolbar nav button { padding: 9px 13px; font-size: 12px; min-height: 44px; }
+  .mirandas-store .store-products { grid-template-columns: 1fr; gap: 14px; }
+  .mirandas-store .store-product-card { display: grid; grid-template-columns: 126px minmax(0,1fr); border-radius: 15px; }
+  .mirandas-store .store-product-photo { height: 100%; min-height: 185px; }
+  .mirandas-store .food-placeholder { font-size: 54px; }
+  .mirandas-store .store-product-info { padding: 14px 12px; min-width: 0; }
+  .mirandas-store .store-product-info h2 { font-size: 17px; }
+  .mirandas-store .store-product-info>small { font-size: 8px; }
+  .mirandas-store .store-product-info p { font-size: 10px; height: auto; max-height: 63px; overflow:hidden; }
+  .mirandas-store .store-product-info strong { font-size: 17px; }
+  .mirandas-store .store-product-info button { width: 35px; height: 35px; }
+  .mirandas-store .mobile-cart-bar { display: flex; }
+}
