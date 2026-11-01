@@ -1,6 +1,7 @@
 "use client";
 
 import "./mirandas-theme.css";
+import { mirandasDemoData } from "@/lib/mirandas-demo-data";
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Clock3, MapPin, Minus, Pizza, PlayCircle, Plus, Search, ShieldCheck, ShoppingBag, Store, X } from "lucide-react";
@@ -70,6 +71,8 @@ export function Storefront({ slug }: { slug: string }) {
     async function load(){
       setLoading(true);setFatalError("");
       try{
+        // Isolated, non-transactional preview for Nathali, before creating a live tenant.
+        if(slug==="mirandas-point-burguer"){setStore(mirandasDemoData);return;}
         const response = await fetch(`/api/storefront/${encodeURIComponent(slug)}`,{signal:controller.signal,cache:"no-store"});
         const body = await response.json() as PublicStorePayload|{error?:string};
         if(!response.ok) throw new Error("error" in body && body.error ? body.error : "Loja indisponível.");
