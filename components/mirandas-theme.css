@@ -62,7 +62,7 @@
   text-shadow: 0 2px 18px #edaa40aa;
   transform: rotate(-7deg); box-shadow: 0 20px 60px #0007, inset 0 0 24px #e8b65b18;
 }
-.mirandas-store .store-cover-copy > div:nth-child(3) { position: relative; z-index: 1; }
+.mirandas-store .mirandas-cover-text { position: relative; z-index: 1; }
 .mirandas-store .store-cover .eyebrow {
   color: #f2b453 !important; font-size: 11px !important; letter-spacing: 3px;
 }
@@ -200,7 +200,7 @@
   .mirandas-store .store-cover-copy { padding-right: 33%; }
   .mirandas-store .mirandas-hero-art { right: 4%; width: 30%; top: 95px; }
   .mirandas-store .store-logo.hero { display: none; }
-  .mirandas-store .store-cover-copy>div:nth-child(3) { min-width: 0; }
+  .mirandas-store .mirandas-cover-text { min-width: 0; }
 }
 @media (max-width: 600px) {
   .mirandas-store .store-top { height: 72px; padding: 0 14px; }
