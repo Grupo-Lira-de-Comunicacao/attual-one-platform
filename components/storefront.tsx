@@ -1,5 +1,7 @@
 "use client";
 
+import "./mirandas-theme.css";
+
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Clock3, MapPin, Minus, Pizza, PlayCircle, Plus, Search, ShieldCheck, ShoppingBag, Store, X } from "lucide-react";
 import { PizzaConfigurator } from "@/components/pizza-configurator";
@@ -26,6 +28,20 @@ type CartItem = StoredOrderItem;
 type Address = { street:string; number:string; complement:string; district:string; city:string; postalCode:string };
 const emptyAddress: Address = { street:"", number:"", complement:"", district:"", city:"", postalCode:"" };
 const productPrice = (product: PublicStoreProduct) => product.promotionalPrice ?? product.price;
+const mirandasCategoryIcon = (name: string) =>
+  /burguer|hamb[uú]rguer|lanche/i.test(name) ? "🍔" :
+  /especial/i.test(name) ? "⭐" :
+  /combo/i.test(name) ? "🍔" :
+  /por[cç][aã]o|frita/i.test(name) ? "🍟" :
+  /cerveja/i.test(name) ? "🍺" :
+  /bebida|[aá]lcool|refrigerante/i.test(name) ? "🥤" :
+  /adicional/i.test(name) ? "🧀" : "✦";
+const mirandasProductIcon = (name: string) =>
+  /frita|batata/i.test(name) ? "🍟" :
+  /cerveja/i.test(name) ? "🍺" :
+  /[aá]gua|refri|cola|skol|guaran[aá]|suco|lata/i.test(name) ? "🥤" :
+  /calabresa/i.test(name) ? "🥓" :
+  /bacon|catupiry|cheddar/i.test(name) ? "🧀" : "🍔";
 const cartHasAgeRestrictedProduct = (store:PublicStorePayload,cart:CartItem[]) => cart.some((item)=>{
   const first=store.products.find((product)=>product.id===item.productId);
   const second=item.configuration?.kind==="pizza"&&item.configuration.mode==="half"&&item.configuration.secondProductId
@@ -35,6 +51,7 @@ const cartHasAgeRestrictedProduct = (store:PublicStorePayload,cart:CartItem[]) =
 });
 
 export function Storefront({ slug }: { slug: string }) {
+  const isMirandas = slug === "mirandas-point-burguer";
   const [store,setStore] = useState<PublicStorePayload|null>(null);
   const [loading,setLoading] = useState(true);
   const [fatalError,setFatalError] = useState("");
@@ -98,6 +115,8 @@ export function Storefront({ slug }: { slug: string }) {
     return()=>window.removeEventListener("attual-one:use-coupon",listener);
   },[cart.length]);
 
+  // Demonstration mode keeps the cart interactive, but never sends live orders.
+  const isDemo = isMirandas && Boolean(store && !store.config.open && !store.config.acceptOrdersWhenClosed);
   const pizzaProducts = useMemo(()=>store?.products.filter((product)=>product.isPizza)??[],[store]);
   const pizzaCategoryIds = useMemo(()=>new Set(pizzaProducts.map((product)=>product.categoryId)),[pizzaProducts]);
   const pizzaEnabled = Boolean(store?.config.pizzaConfiguratorEnabled && pizzaProducts.length);
@@ -113,7 +132,7 @@ export function Storefront({ slug }: { slug: string }) {
   const containsAgeRestricted = Boolean(store&&cartHasAgeRestrictedProduct(store,cart));
 
   function addItem(product:PublicStoreProduct){
-    if(!store||((!store.config.open&&!store.config.acceptOrdersWhenClosed)||product.status!=="available"))return;
+    if(!store||((!isDemo&&!store.config.open&&!store.config.acceptOrdersWhenClosed)||product.status!=="available"))return;
     setCart((current)=>{
       const existing=current.find((item)=>item.productId===product.id&&!item.configuration&&!item.additions.length&&!item.note);
       if(existing){const q=existing.quantity+1;if(product.trackStock&&q>product.currentStock){setMessage({type:"error",text:"Quantidade acima do estoque disponível."});return current;}return current.map((item)=>item===existing?{...item,quantity:q}:item);}
@@ -134,15 +153,17 @@ export function Storefront({ slug }: { slug: string }) {
   if(loading)return <div className="store-loading"><span className="store-logo">AO</span><p>Preparando a loja...</p></div>;
   if(!store||fatalError)return <div className="store-loading"><span className="store-logo">AO</span><p>{fatalError||"Loja não encontrada."}</p></div>;
   const location=[store.config.city,store.config.state].filter(Boolean).join("/");
-  const orderDisabled=!store.config.open&&!store.config.acceptOrdersWhenClosed;
+  const orderDisabled=!isDemo&&!store.config.open&&!store.config.acceptOrdersWhenClosed;
 
-  return <div className="public-store">
+  return <div className={`public-store ${isMirandas ? "mirandas-store" : ""}`}>
     {message&&<div className={`store-message ${message.type}`}>{message.text}<button onClick={()=>setMessage(null)} aria-label="Fechar mensagem"><X size={15}/></button></div>}
-    <header className="store-top"><a href="#cardapio" className="store-brand"><span className="store-logo">{store.config.logoText}</span><span><strong>{store.config.name}</strong><small>{store.config.tagline}</small></span></a><button className="store-cart-button" onClick={()=>setCartOpen(true)} aria-label="Abrir carrinho"><ShoppingBag/><span>{itemCount}</span><strong>{money.format(subtotal)}</strong></button></header>
-    <section className="store-cover"><div className="cover-pattern"/><div className="store-cover-copy"><span className="store-logo hero">{store.config.logoText}</span><div><p className="eyebrow">LOJA ONLINE</p><h1>{store.config.coverMessage}</h1><div className="store-meta"><span className={store.config.open?"open":"closed"}><i/>{store.config.open?"Aberto agora":"Fechado"}</span><span><Clock3/>{store.config.openingHours}</span>{location&&<span><MapPin/>{location}</span>}</div></div></div></section>
-    {!store.config.open&&<div className="closed-banner"><Store/><span><strong>Loja fechada</strong><small>{store.config.closedMessage}</small></span></div>}
+    <header className="store-top"><a href="#cardapio" className="store-brand"><span className="store-logo">{isMirandas ? "✤" : store.config.logoText}</span><span><strong>{isMirandas ? "Miranda’s" : store.config.name}</strong><small>{isMirandas ? "POINT & BURGUER" : store.config.tagline}</small></span></a><button className="store-cart-button" onClick={()=>setCartOpen(true)} aria-label="Abrir carrinho"><ShoppingBag/><span>{itemCount}</span><strong>{money.format(subtotal)}</strong></button></header>
+    <section className="store-cover"><div className="cover-pattern"/><div className="store-cover-copy"><span className="store-logo hero">{isMirandas ? "✤" : store.config.logoText}</span><div className="mirandas-cover-text"><p className="eyebrow">{isMirandas ? "MIRANDA’S POINT & BURGUER" : "LOJA ONLINE"}</p><h1>{isMirandas ? <>Bons hambúrgueres, <em>boas histórias.</em></> : store.config.coverMessage}</h1>{isMirandas && <p className="mirandas-intro">O sabor que conquista e os momentos que ficam. Escolha seu hambúrguer, monte seu combo e venha viver essa história.</p>}<div className="store-meta"><span className={store.config.open?"open":"closed"}><i/>{isDemo ? "Cardápio em demonstração" : store.config.open?"Aberto agora":"Fechado"}</span>{store.config.openingHours && <span><Clock3/>{store.config.openingHours}</span>}{location&&<span><MapPin/>{location}</span>}</div></div>{isMirandas&&<div className="mirandas-hero-art" aria-hidden="true"><span>🍔</span></div>}</div></section>
+    {!store.config.open&&!isDemo&&<div className="closed-banner"><Store/><span><strong>Loja fechada</strong><small>{store.config.closedMessage}</small></span></div>}
+    {isDemo&&<div className="mirandas-demo-banner" role="status">✦ Prévia interativa do cardápio · Você pode adicionar itens ao carrinho, mas nenhum pedido real será enviado.</div>}
     <main id="cardapio" className="store-content">
-      <section className="store-toolbar"><label><Search/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Buscar produtos"/></label><nav aria-label="Categorias"><button className={category==="all"?"active":""} onClick={()=>setCategory("all")}>Todos</button>{store.categories.map((item)=><button key={item.id} className={category===item.id?"active":""} onClick={()=>setCategory(item.id)}>{item.name}</button>)}</nav></section>
+      {isMirandas&&<section className="mirandas-introbar"><div><small>FEITO COM CARINHO, SERVIDO COM SABOR</small><h2>Escolha seu favorito</h2></div><p>Cardápio digital Miranda’s: hambúrgueres, especiais, combos, porções e bebidas, tudo na palma da mão.</p></section>}
+      <section className="store-toolbar"><label><Search/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Buscar produtos"/></label><nav aria-label="Categorias"><button className={category==="all"?"active":""} onClick={()=>setCategory("all")}>{isMirandas&&<span aria-hidden="true">✦</span>}Todos</button>{store.categories.map((item)=><button key={item.id} className={category===item.id?"active":""} onClick={()=>setCategory(item.id)}>{isMirandas&&<span aria-hidden="true">{mirandasCategoryIcon(item.name)}</span>}{item.name}</button>)}</nav></section>
       {!showPizzaCard&&products.length===0?<div className="store-empty"><Search/><h2>Nenhum produto encontrado</h2><p>Tente outra busca ou categoria.</p></div>:<section className="store-products">
         {showPizzaCard&&<button type="button" disabled={orderDisabled} onClick={()=>setPizzaOpen(true)} className="group overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-amber-400 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60">
           <div className="flex min-h-[210px] flex-col justify-between p-6">
@@ -150,23 +171,23 @@ export function Storefront({ slug }: { slug: string }) {
             <div className="mt-8"><small className="font-black uppercase tracking-[.18em] text-amber-700">PIZZAS</small><h2 className="mt-1 text-2xl font-black text-slate-950">Monte sua pizza</h2><p className="mt-2 text-sm leading-5 text-slate-600">Escolha inteira ou meio a meio, tamanho e sabores em poucos passos.</p><span className="mt-5 flex items-center gap-1 text-sm font-black text-amber-700">Começar pedido <ChevronRight size={17}/></span></div>
           </div>
         </button>}
-        {products.map((product)=><ProductCard key={product.id} product={product} companyName={store.config.name} disabled={orderDisabled} onAdd={()=>addItem(product)}/>)}</section>}
+        {products.map((product)=><ProductCard key={product.id} product={product} companyName={store.config.name} disabled={orderDisabled} mirandas={isMirandas} onAdd={()=>addItem(product)}/>)}</section>}
     </main>
-    <footer className="store-footer"><span className="store-logo">{store.config.logoText}</span><p>{store.config.name} · Loja criada com ATTUAL ONE</p></footer>
-    <StoreCustomerAccount slug={slug}/>
+    <footer className="store-footer"><span className="store-logo">{isMirandas ? "✤" : store.config.logoText}</span><p>{isMirandas ? "Bons hambúrgueres, boas histórias. · Tecnologia ATTUAL ONE" : `${store.config.name} · Loja criada com ATTUAL ONE`}</p></footer>
+    {!isDemo&&<StoreCustomerAccount slug={slug}/>}
     {cart.length>0&&<button className="mobile-cart-bar" onClick={()=>setCartOpen(true)}><span>{itemCount} itens</span><strong>Ver carrinho · {money.format(subtotal)}</strong></button>}
     {pizzaOpen&&<PizzaConfigurator products={pizzaProducts} disabled={orderDisabled} onClose={()=>setPizzaOpen(false)} onAdd={addConfiguredPizza}/>} 
-    {cartOpen&&<CartDrawer cart={cart} subtotal={subtotal} containsAgeRestricted={containsAgeRestricted} onClose={()=>setCartOpen(false)} onQuantity={updateQuantity} onItem={updateItem} onClear={()=>setCart([])} onCheckout={()=>{setCartOpen(false);setCheckout(true);}}/>}
+    {cartOpen&&<CartDrawer cart={cart} subtotal={subtotal} containsAgeRestricted={containsAgeRestricted} demoMode={isDemo} onClose={()=>setCartOpen(false)} onQuantity={updateQuantity} onItem={updateItem} onClear={()=>setCart([])} onCheckout={()=>{setCartOpen(false);if(isDemo){setMessage({type:"success",text:"Esta é uma demonstração. O envio de pedidos será ativado após a validação da Nathali."});}else{setCheckout(true);}}}/>} 
     {checkout&&<CheckoutModal slug={slug} store={store} cart={cart} subtotal={subtotal} initialCoupon={preferredCoupon} onClose={()=>setCheckout(false)} onConfirmed={(order)=>{setCheckout(false);setCart([]);setPreferredCoupon("");setConfirmed(order);window.dispatchEvent(new Event("attual-one:customer-memory-updated"));}}/>}
     {confirmed&&<Confirmation order={confirmed} slug={slug} onClose={()=>setConfirmed(null)}/>} 
   </div>;
 }
 
-function ProductCard({product,companyName,disabled,onAdd}:{product:PublicStoreProduct;companyName:string;disabled:boolean;onAdd:()=>void}){
+function ProductCard({product,companyName,disabled,mirandas,onAdd}:{product:PublicStoreProduct;companyName:string;disabled:boolean;mirandas:boolean;onAdd:()=>void}){
   const unavailable=product.status!=="available"||disabled;
   return <article className={`store-product-card ${unavailable?"unavailable":""}`}>
     <div className="store-product-photo">
-      {product.imageUrl?<span style={{backgroundImage:`url(${product.imageUrl})`}}/>:<span className="food-placeholder">{product.name.split(" ").map((part)=>part[0]).slice(0,2).join("")}</span>}
+      {product.imageUrl?<span style={{backgroundImage:`url(${product.imageUrl})`}}/>:<span className="food-placeholder">{mirandas ? mirandasProductIcon(product.name) : product.name.split(" ").map((part)=>part[0]).slice(0,2).join("")}</span>}
       {product.promotionalPrice!==undefined&&<em>OFERTA</em>}
       {product.status==="out_of_stock"&&<b>ESGOTADO</b>}
       {product.requiresAgeVerification&&<span className="absolute bottom-2 left-2 rounded-full bg-slate-950 px-2.5 py-1 text-[10px] font-black text-white">18+</span>}
@@ -185,7 +206,7 @@ function ProductCard({product,companyName,disabled,onAdd}:{product:PublicStorePr
   </article>;
 }
 
-function CartDrawer({cart,subtotal,containsAgeRestricted,onClose,onQuantity,onItem,onClear,onCheckout}:{cart:CartItem[];subtotal:number;containsAgeRestricted:boolean;onClose:()=>void;onQuantity:(index:number,quantity:number)=>void;onItem:(index:number,patch:Partial<Pick<CartItem,"additions"|"note">>)=>void;onClear:()=>void;onCheckout:()=>void}){return <div className="store-overlay"><aside className="cart-drawer" role="dialog" aria-modal="true"><header><div><p className="eyebrow">SEU PEDIDO</p><h2>Carrinho</h2></div><button onClick={onClose} aria-label="Fechar carrinho"><X/></button></header><div className="cart-items">{cart.map((item,index)=><article key={`${item.productId}-${index}`}><div><strong>{item.productName}</strong>{!item.configuration&&<input value={item.additions.join(", ")} placeholder="Adicionais (separe por vírgula)" onChange={(event)=>onItem(index,{additions:event.target.value.split(",").map((value)=>value.trim()).filter(Boolean).slice(0,20)})}/>}<input value={item.note} maxLength={500} placeholder="Alguma observação?" onChange={(event)=>onItem(index,{note:event.target.value})}/></div><div className="cart-item-bottom"><span className="qty"><button onClick={()=>onQuantity(index,item.quantity-1)}><Minus/></button><b>{item.quantity}</b><button onClick={()=>onQuantity(index,item.quantity+1)}><Plus/></button></span><strong>{money.format(item.unitPrice*item.quantity)}</strong></div></article>)}</div>{containsAgeRestricted&&<div className="mx-4 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><strong className="flex items-center gap-2"><ShieldCheck size={16}/>Pedido contém bebida alcoólica — 18+</strong><span className="mt-1 block">A bebida só poderá ser entregue ou retirada por uma pessoa maior de 18 anos mediante conferência de documento com foto.</span></div>}<div className="cart-summary"><span>Subtotal <strong>{money.format(subtotal)}</strong></span><span className="total">Total parcial <strong>{money.format(subtotal)}</strong></span><button className="store-primary" disabled={!cart.length} onClick={onCheckout}>Continuar para o checkout <ChevronRight/></button><button className="clear-cart" onClick={onClear}>Limpar carrinho</button></div></aside></div>}
+function CartDrawer({cart,subtotal,containsAgeRestricted,demoMode,onClose,onQuantity,onItem,onClear,onCheckout}:{cart:CartItem[];subtotal:number;containsAgeRestricted:boolean;demoMode:boolean;onClose:()=>void;onQuantity:(index:number,quantity:number)=>void;onItem:(index:number,patch:Partial<Pick<CartItem,"additions"|"note">>)=>void;onClear:()=>void;onCheckout:()=>void}){return <div className="store-overlay"><aside className="cart-drawer" role="dialog" aria-modal="true"><header><div><p className="eyebrow">SEU PEDIDO</p><h2>Carrinho</h2></div><button onClick={onClose} aria-label="Fechar carrinho"><X/></button></header><div className="cart-items">{cart.map((item,index)=><article key={`${item.productId}-${index}`}><div><strong>{item.productName}</strong>{!item.configuration&&<input value={item.additions.join(", ")} placeholder="Adicionais (separe por vírgula)" onChange={(event)=>onItem(index,{additions:event.target.value.split(",").map((value)=>value.trim()).filter(Boolean).slice(0,20)})}/>}<input value={item.note} maxLength={500} placeholder="Alguma observação?" onChange={(event)=>onItem(index,{note:event.target.value})}/></div><div className="cart-item-bottom"><span className="qty"><button onClick={()=>onQuantity(index,item.quantity-1)}><Minus/></button><b>{item.quantity}</b><button onClick={()=>onQuantity(index,item.quantity+1)}><Plus/></button></span><strong>{money.format(item.unitPrice*item.quantity)}</strong></div></article>)}</div>{containsAgeRestricted&&<div className="mx-4 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950"><strong className="flex items-center gap-2"><ShieldCheck size={16}/>Pedido contém bebida alcoólica — 18+</strong><span className="mt-1 block">A bebida só poderá ser entregue ou retirada por uma pessoa maior de 18 anos mediante conferência de documento com foto.</span></div>}<div className="cart-summary"><span>Subtotal <strong>{money.format(subtotal)}</strong></span><span className="total">Total parcial <strong>{money.format(subtotal)}</strong></span><button className="store-primary" disabled={!cart.length} onClick={onCheckout}>{demoMode?"Simular finalização":"Continuar para o checkout"} <ChevronRight/></button><button className="clear-cart" onClick={onClear}>Limpar carrinho</button></div></aside></div>}
 
 function CheckoutModal({slug,store,cart,subtotal,initialCoupon,onClose,onConfirmed}:{slug:string;store:PublicStorePayload;cart:CartItem[];subtotal:number;initialCoupon:string;onClose:()=>void;onConfirmed:(order:PublicCheckoutResult)=>void}){
   const [identified,setIdentified]=useState(true),[name,setName]=useState(""),[phone,setPhone]=useState("");
