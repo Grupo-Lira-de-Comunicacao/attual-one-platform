@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 const signalRoute = fs.readFileSync("app/api/integrations/matrix/signals/route.ts", "utf8");
+const atomicLinkMigration = fs.readFileSync("supabase/migrations/20261125221000_matrix_atomic_link_receipts.sql", "utf8");
 const linkCallback = fs.readFileSync("app/api/integrations/matrix/links/route.ts", "utf8");
 const userBridge = fs.readFileSync("app/api/storefront/[slug]/account/matrix-link/route.ts", "utf8");
 const migration = fs.readFileSync("supabase/migrations/202609070002_matrix_person_links.sql", "utf8");
@@ -24,7 +25,11 @@ test("M4 account bridge sends only opaque account reference to Matrix", () => {
 
 test("M4 link callback can revoke and suppress pending signals", () => {
   assert.match(linkCallback, /link_status:\s*"linked"\s*\|\s*"revoked"/);
-  assert.match(linkCallback, /processing_status:\s*"suppressed"/);
+  assert.match(linkCallback, /rpc\("matrix_apply_link_callback"/);
+  assert.match(linkCallback, /outcome !== "applied"/);
+  assert.match(atomicLinkMigration, /processing_status = 'suppressed'/);
+  assert.match(atomicLinkMigration, /matrix_person_link_audit/);
+  assert.match(atomicLinkMigration, /before insert on public\.matrix_signal_inbox/);
   assert.match(linkCallback, /marketing_enabled:\s*false/);
   assert.match(linkCallback, /external_action_enabled:\s*false/);
 });
