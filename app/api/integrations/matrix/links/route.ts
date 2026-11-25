@@ -47,64 +47,30 @@ export async function POST(request: NextRequest) {
   const supabase = createClient(cfg.supabaseUrl, cfg.serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const existing = await supabase
-    .from("matrix_person_links")
-    .select("id,store_account_id,customer_id,status")
-    .eq("matrix_person_id", body.matrix_person_id)
-    .maybeSingle();
-  if (existing.error) {
-    console.error("[matrix-links] lookup failed", existing.error);
-    return NextResponse.json({ error: "Falha de persistência." }, { status: 500 });
-  }
-  if (!existing.data) return NextResponse.json({ error: "Vínculo pendente não encontrado." }, { status: 404 });
-
-  const now = new Date().toISOString();
-  const update = body.link_status === "linked"
-    ? { status: "linked", linked_at: now, revoked_at: null, updated_at: now, last_correlation_id: body.correlation_id }
-    : { status: "revoked", revoked_at: now, updated_at: now, last_correlation_id: body.correlation_id };
-  const changed = await supabase.from("matrix_person_links").update(update).eq("id", existing.data.id);
-  if (changed.error) {
-    console.error("[matrix-links] update failed", changed.error);
-    return NextResponse.json({ error: "Falha de persistência." }, { status: 500 });
-  }
-
-  if (body.link_status === "linked" && existing.data.customer_id) {
-    const inbox = await supabase
-      .from("matrix_signal_inbox")
-      .update({ processing_status: "linked", linked_customer_id: existing.data.customer_id, updated_at: now })
-      .eq("matrix_person_id", body.matrix_person_id)
-      .in("processing_status", ["received", "unlinked"]);
-    if (inbox.error) console.error("[matrix-links] inbox link update", inbox.error);
-  }
-
-  if (body.link_status === "revoked") {
-    const inbox = await supabase
-      .from("matrix_signal_inbox")
-      .update({ processing_status: "suppressed", linked_customer_id: null, updated_at: now })
-      .eq("matrix_person_id", body.matrix_person_id)
-      .in("processing_status", ["received", "unlinked", "linked"]);
-    if (inbox.error) console.error("[matrix-links] inbox suppression update", inbox.error);
-  }
-
-  const audit = await supabase.from("matrix_person_link_audit").insert({
-    matrix_person_id: body.matrix_person_id,
-    store_account_id: existing.data.store_account_id,
-    action: body.link_status,
-    actor_type: "matrix",
-    correlation_id: body.correlation_id,
-    metadata: {
-      customer_linked: Boolean(existing.data.customer_id),
-      marketing_enabled: false,
-      external_action_enabled: false,
-    },
+  const applied = await supabase.rpc("matrix_apply_link_callback", {
+    p_matrix_person_id: body.matrix_person_id,
+    p_link_status: body.link_status,
+    p_correlation_id: body.correlation_id,
   });
-  if (audit.error) console.error("[matrix-links] audit failed", audit.error);
+  if (applied.error) {
+    console.error("[matrix-links] atomic callback failed", applied.error.code);
+    return NextResponse.json({ error: "Falha de persistência." }, { status: 500 });
+  }
+  if (applied.data?.outcome === "not_found") {
+    return NextResponse.json({ error: "Vínculo pendente não encontrado." }, { status: 404 });
+  }
+  if (applied.data?.outcome === "state_conflict") {
+    return NextResponse.json({ error: "Estado do vínculo incompatível." }, { status: 409 });
+  }
+  if (applied.data?.outcome !== "applied" || typeof applied.data.customer_linked !== "boolean") {
+    return NextResponse.json({ error: "Confirmação de persistência indisponível." }, { status: 503 });
+  }
 
   return NextResponse.json({
     accepted: true,
     matrix_person_id: body.matrix_person_id,
     link_status: body.link_status,
-    customer_linked: body.link_status === "linked" && Boolean(existing.data.customer_id),
+    customer_linked: applied.data.customer_linked,
     marketing_enabled: false,
     external_action_enabled: false,
   });

@@ -47,5 +47,6 @@ jobs:
           grep -q 'explicit_user_bridge' supabase/migrations/202609070002_matrix_person_links.sql
           grep -q 'marketing_allowed: false' app/api/integrations/matrix/signals/route.ts
           grep -q 'external_action_allowed: false' app/api/integrations/matrix/signals/route.ts
-          grep -q 'processing_status: "suppressed"' app/api/integrations/matrix/links/route.ts
+          grep -Fq 'rpc("matrix_apply_link_callback"' app/api/integrations/matrix/links/route.ts
+          grep -Fq "processing_status = 'suppressed'" supabase/migrations/20261125221000_matrix_atomic_link_receipts.sql
           grep -q 'pii_sent_to_matrix: false' app/api/storefront/[slug]/account/matrix-link/route.ts
